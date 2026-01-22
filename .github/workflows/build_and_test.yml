@@ -201,7 +201,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $env:PATH = "C:\msys64\mingw64\bin;$env:PATH"
+          $env:PATH = "$env:RUNNER_TEMP\msys64\mingw64\bin;$env:PATH"
           cd tidesdb-ts
           npm install
           npm run build
@@ -210,6 +210,6 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $env:PATH = "C:\msys64\mingw64\bin;$env:PATH"
+          $env:PATH = "$env:RUNNER_TEMP\msys64\mingw64\bin;$env:PATH"
           cd tidesdb-ts
           npm test
