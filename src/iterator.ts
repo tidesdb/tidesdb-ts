@@ -29,6 +29,7 @@ import {
   tidesdb_iter_free,
 } from './ffi';
 import { checkResult } from './error';
+import { ErrorCode } from './types';
 
 // Opaque pointer type for iterator
 type IterPtr = unknown;
@@ -89,20 +90,28 @@ export class Iterator {
 
   /**
    * Move the iterator to the next entry.
+   * Does not throw if already at end - use isValid() to check.
    */
   next(): void {
     if (!this._iter) throw new Error('Iterator has been freed');
     const result = tidesdb_iter_next(this._iter);
-    checkResult(result, 'failed to move to next');
+    // Don't throw on "not found" - iterator just becomes invalid
+    if (result !== ErrorCode.Success && result !== ErrorCode.ErrNotFound) {
+      throw new Error(`failed to move to next: error code ${result}`);
+    }
   }
 
   /**
    * Move the iterator to the previous entry.
+   * Does not throw if already at beginning - use isValid() to check.
    */
   prev(): void {
     if (!this._iter) throw new Error('Iterator has been freed');
     const result = tidesdb_iter_prev(this._iter);
-    checkResult(result, 'failed to move to prev');
+    // Don't throw on "not found" - iterator just becomes invalid
+    if (result !== ErrorCode.Success && result !== ErrorCode.ErrNotFound) {
+      throw new Error(`failed to move to prev: error code ${result}`);
+    }
   }
 
   /**

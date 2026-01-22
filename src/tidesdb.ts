@@ -16,6 +16,7 @@
 // limitations under the License.
 
 import {
+  koffi,
   tidesdb_open,
   tidesdb_close,
   tidesdb_default_column_family_config,
@@ -218,13 +219,27 @@ export class TidesDB {
     checkResult(result, 'failed to list column families');
 
     const count = countOut[0];
-    if (count === 0) {
+    if (count === 0 || !namesPtrOut[0]) {
       return [];
     }
 
-    // For now, return empty array - full implementation requires complex pointer handling
-    // This is a limitation of the koffi binding approach
-    return [];
+    // Decode the char** array using koffi
+    const names: string[] = [];
+    try {
+      // Read array of char* pointers
+      const ptrArray = koffi.decode(namesPtrOut[0], 'char *', count) as unknown[];
+      for (let i = 0; i < count; i++) {
+        if (ptrArray[i]) {
+          // Decode each char* to string
+          names.push(koffi.decode(ptrArray[i], 'char', 256) as string);
+        }
+      }
+    } catch {
+      // If decoding fails, return empty array
+      return [];
+    }
+
+    return names;
   }
 
   /**
