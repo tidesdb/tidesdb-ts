@@ -144,11 +144,15 @@ jobs:
           cmake -G "MinGW Makefiles" \
             -DCMAKE_MAKE_PROGRAM=mingw32-make \
             -DCMAKE_PREFIX_PATH=/mingw64 \
+            -DBUILD_SHARED_LIBS=ON \
             -DTIDESDB_WITH_SANITIZER=OFF \
             -DTIDESDB_BUILD_TESTS=OFF \
             -S . -B build
           cmake --build build --config Release
           cmake --install build --prefix /mingw64
+          # Ensure DLL is in bin directory for runtime loading
+          cp /mingw64/lib/libtidesdb.dll /mingw64/bin/ 2>/dev/null || true
+          ls -la /mingw64/bin/libtidesdb* /mingw64/lib/libtidesdb* 2>/dev/null || true
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
