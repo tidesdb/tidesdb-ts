@@ -96,7 +96,8 @@ function getLibraryPath(): string {
   if (process.platform === 'darwin') {
     return 'libtidesdb.dylib';
   } else if (process.platform === 'win32') {
-    return 'tidesdb.dll';
+    // MinGW builds produce libtidesdb.dll, MSVC produces tidesdb.dll
+    return 'libtidesdb.dll';
   } else {
     return 'libtidesdb.so';
   }
