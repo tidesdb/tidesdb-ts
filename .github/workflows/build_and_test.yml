@@ -150,9 +150,19 @@ jobs:
             -S . -B build
           cmake --build build --config Release
           cmake --install build --prefix /mingw64
-          # Ensure DLL is in bin directory for runtime loading
-          cp /mingw64/lib/libtidesdb.dll /mingw64/bin/ 2>/dev/null || true
-          ls -la /mingw64/bin/libtidesdb* /mingw64/lib/libtidesdb* 2>/dev/null || true
+          # Debug: show what was built and installed
+          echo "=== Build directory contents ==="
+          ls -la build/*.dll build/*.a 2>/dev/null || echo "No DLLs in build/"
+          echo "=== Installed lib contents ==="
+          ls -la /mingw64/lib/libtidesdb* 2>/dev/null || echo "No libtidesdb in /mingw64/lib/"
+          echo "=== Installed bin contents ==="
+          ls -la /mingw64/bin/libtidesdb* 2>/dev/null || echo "No libtidesdb in /mingw64/bin/"
+          # Copy DLL from build dir or lib to bin
+          cp build/libtidesdb.dll /mingw64/bin/ 2>/dev/null || \
+          cp /mingw64/lib/libtidesdb.dll /mingw64/bin/ 2>/dev/null || \
+          echo "Warning: Could not find libtidesdb.dll to copy"
+          echo "=== Final bin contents ==="
+          ls -la /mingw64/bin/libtidesdb* 2>/dev/null || echo "Still no libtidesdb in /mingw64/bin/"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
