@@ -15,16 +15,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { lib, ref, uint8PtrPtr, sizeTPtr } from './ffi';
+import {
+  koffi,
+  tidesdb_iter_seek_to_first,
+  tidesdb_iter_seek_to_last,
+  tidesdb_iter_seek,
+  tidesdb_iter_seek_for_prev,
+  tidesdb_iter_valid,
+  tidesdb_iter_next,
+  tidesdb_iter_prev,
+  tidesdb_iter_key,
+  tidesdb_iter_value,
+  tidesdb_iter_free,
+} from './ffi';
 import { checkResult } from './error';
+
+// Opaque pointer type for iterator
+type IterPtr = unknown;
 
 /**
  * Iterator for traversing key-value pairs in a column family.
  */
 export class Iterator {
-  private _iter: Buffer | null;
+  private _iter: IterPtr | null;
 
-  constructor(iter: Buffer) {
+  constructor(iter: IterPtr) {
     this._iter = iter;
   }
 
@@ -33,7 +48,7 @@ export class Iterator {
    */
   seekToFirst(): void {
     if (!this._iter) throw new Error('Iterator has been freed');
-    const result = lib.tidesdb_iter_seek_to_first(this._iter);
+    const result = tidesdb_iter_seek_to_first(this._iter);
     checkResult(result, 'failed to seek to first');
   }
 
@@ -42,7 +57,7 @@ export class Iterator {
    */
   seekToLast(): void {
     if (!this._iter) throw new Error('Iterator has been freed');
-    const result = lib.tidesdb_iter_seek_to_last(this._iter);
+    const result = tidesdb_iter_seek_to_last(this._iter);
     checkResult(result, 'failed to seek to last');
   }
 
@@ -51,7 +66,7 @@ export class Iterator {
    */
   seek(key: Buffer): void {
     if (!this._iter) throw new Error('Iterator has been freed');
-    const result = lib.tidesdb_iter_seek(this._iter, key, key.length);
+    const result = tidesdb_iter_seek(this._iter, key, key.length);
     checkResult(result, 'failed to seek');
   }
 
@@ -60,7 +75,7 @@ export class Iterator {
    */
   seekForPrev(key: Buffer): void {
     if (!this._iter) throw new Error('Iterator has been freed');
-    const result = lib.tidesdb_iter_seek_for_prev(this._iter, key, key.length);
+    const result = tidesdb_iter_seek_for_prev(this._iter, key, key.length);
     checkResult(result, 'failed to seek for prev');
   }
 
@@ -69,7 +84,7 @@ export class Iterator {
    */
   isValid(): boolean {
     if (!this._iter) return false;
-    return lib.tidesdb_iter_valid(this._iter) !== 0;
+    return tidesdb_iter_valid(this._iter) !== 0;
   }
 
   /**
@@ -77,7 +92,7 @@ export class Iterator {
    */
   next(): void {
     if (!this._iter) throw new Error('Iterator has been freed');
-    const result = lib.tidesdb_iter_next(this._iter);
+    const result = tidesdb_iter_next(this._iter);
     checkResult(result, 'failed to move to next');
   }
 
@@ -86,7 +101,7 @@ export class Iterator {
    */
   prev(): void {
     if (!this._iter) throw new Error('Iterator has been freed');
-    const result = lib.tidesdb_iter_prev(this._iter);
+    const result = tidesdb_iter_prev(this._iter);
     checkResult(result, 'failed to move to prev');
   }
 
@@ -96,16 +111,17 @@ export class Iterator {
   key(): Buffer {
     if (!this._iter) throw new Error('Iterator has been freed');
 
-    const keyPtrPtr = ref.alloc(uint8PtrPtr);
-    const keySizePtr = ref.alloc(sizeTPtr);
+    const keyPtrOut: unknown[] = [null];
+    const keySizeOut: number[] = [0];
 
-    const result = lib.tidesdb_iter_key(this._iter, keyPtrPtr, keySizePtr);
+    const result = tidesdb_iter_key(this._iter, keyPtrOut, keySizeOut);
     checkResult(result, 'failed to get key');
 
-    const keyPtr = keyPtrPtr.deref();
-    const keySize = keySizePtr.deref() as unknown as number;
+    const keySize = keySizeOut[0];
+    if (keySize === 0) return Buffer.alloc(0);
 
-    return ref.reinterpret(keyPtr, keySize, 0);
+    // Decode the pointer to a buffer
+    return Buffer.from(koffi.decode(keyPtrOut[0], 'uint8_t', keySize) as number[]);
   }
 
   /**
@@ -114,16 +130,17 @@ export class Iterator {
   value(): Buffer {
     if (!this._iter) throw new Error('Iterator has been freed');
 
-    const valuePtrPtr = ref.alloc(uint8PtrPtr);
-    const valueSizePtr = ref.alloc(sizeTPtr);
+    const valuePtrOut: unknown[] = [null];
+    const valueSizeOut: number[] = [0];
 
-    const result = lib.tidesdb_iter_value(this._iter, valuePtrPtr, valueSizePtr);
+    const result = tidesdb_iter_value(this._iter, valuePtrOut, valueSizeOut);
     checkResult(result, 'failed to get value');
 
-    const valuePtr = valuePtrPtr.deref();
-    const valueSize = valueSizePtr.deref() as unknown as number;
+    const valueSize = valueSizeOut[0];
+    if (valueSize === 0) return Buffer.alloc(0);
 
-    return ref.reinterpret(valuePtr, valueSize, 0);
+    // Decode the pointer to a buffer
+    return Buffer.from(koffi.decode(valuePtrOut[0], 'uint8_t', valueSize) as number[]);
   }
 
   /**
@@ -131,7 +148,7 @@ export class Iterator {
    */
   free(): void {
     if (this._iter) {
-      lib.tidesdb_iter_free(this._iter);
+      tidesdb_iter_free(this._iter);
       this._iter = null;
     }
   }

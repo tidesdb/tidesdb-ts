@@ -15,162 +15,147 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import ffi from 'ffi-napi';
-import ref from 'ref-napi';
-import StructDI from 'ref-struct-di';
-import ArrayDI from 'ref-array-di';
+import koffi from 'koffi';
 
-const Struct = StructDI(ref);
-const ArrayType = ArrayDI(ref);
+// Define opaque pointer types
+const tidesdb_t = koffi.opaque('tidesdb_t');
+const tidesdb_column_family_t = koffi.opaque('tidesdb_column_family_t');
+const tidesdb_txn_t = koffi.opaque('tidesdb_txn_t');
+const tidesdb_iter_t = koffi.opaque('tidesdb_iter_t');
 
 // Pointer types
-export const voidPtr = ref.refType(ref.types.void);
-export const charPtr = ref.refType(ref.types.char);
-export const charPtrPtr = ref.refType(charPtr);
-export const uint8Ptr = ref.refType(ref.types.uint8);
-export const uint8PtrPtr = ref.refType(uint8Ptr);
-export const sizeTPtr = ref.refType(ref.types.size_t);
-export const intPtr = ref.refType(ref.types.int);
-
-// Opaque pointer types for TidesDB structures
-export const tidesdbPtr = voidPtr;
-export const tidesdbPtrPtr = ref.refType(tidesdbPtr);
-export const columnFamilyPtr = voidPtr;
-export const txnPtr = voidPtr;
-export const txnPtrPtr = ref.refType(txnPtr);
-export const iterPtr = voidPtr;
-export const iterPtrPtr = ref.refType(iterPtr);
+export const tidesdbPtr = koffi.pointer(tidesdb_t);
+export const tidesdbPtrPtr = koffi.pointer(tidesdbPtr);
+export const columnFamilyPtr = koffi.pointer(tidesdb_column_family_t);
+export const txnPtr = koffi.pointer(tidesdb_txn_t);
+export const txnPtrPtr = koffi.pointer(txnPtr);
+export const iterPtr = koffi.pointer(tidesdb_iter_t);
+export const iterPtrPtr = koffi.pointer(iterPtr);
 
 // tidesdb_config_t structure
-export const TidesDBConfig = Struct({
-  db_path: charPtr,
-  num_flush_threads: ref.types.int,
-  num_compaction_threads: ref.types.int,
-  log_level: ref.types.int,
-  block_cache_size: ref.types.size_t,
-  max_open_sstables: ref.types.size_t,
+export const TidesDBConfigStruct = koffi.struct('tidesdb_config_t', {
+  db_path: 'char *',
+  num_flush_threads: 'int',
+  num_compaction_threads: 'int',
+  log_level: 'int',
+  block_cache_size: 'size_t',
+  max_open_sstables: 'size_t',
 });
-
-export const TidesDBConfigPtr = ref.refType(TidesDBConfig);
 
 // tidesdb_column_family_config_t structure
-export const ColumnFamilyConfig = Struct({
-  write_buffer_size: ref.types.size_t,
-  level_size_ratio: ref.types.size_t,
-  min_levels: ref.types.int,
-  dividing_level_offset: ref.types.int,
-  klog_value_threshold: ref.types.size_t,
-  compression_algo: ref.types.int,
-  enable_bloom_filter: ref.types.int,
-  bloom_fpr: ref.types.double,
-  enable_block_indexes: ref.types.int,
-  index_sample_ratio: ref.types.int,
-  block_index_prefix_len: ref.types.int,
-  sync_mode: ref.types.int,
-  sync_interval_us: ref.types.uint64,
-  comparator_name: ArrayType(ref.types.char, 64),
-  comparator_ctx_str: ArrayType(ref.types.char, 256),
-  comparator_fn_cached: voidPtr,
-  comparator_ctx_cached: voidPtr,
-  skip_list_max_level: ref.types.int,
-  skip_list_probability: ref.types.float,
-  default_isolation_level: ref.types.int,
-  min_disk_space: ref.types.uint64,
-  l1_file_count_trigger: ref.types.int,
-  l0_queue_stall_threshold: ref.types.int,
+export const ColumnFamilyConfigStruct = koffi.struct('tidesdb_column_family_config_t', {
+  write_buffer_size: 'size_t',
+  level_size_ratio: 'size_t',
+  min_levels: 'int',
+  dividing_level_offset: 'int',
+  klog_value_threshold: 'size_t',
+  compression_algo: 'int',
+  enable_bloom_filter: 'int',
+  bloom_fpr: 'double',
+  enable_block_indexes: 'int',
+  index_sample_ratio: 'int',
+  block_index_prefix_len: 'int',
+  sync_mode: 'int',
+  sync_interval_us: 'uint64_t',
+  comparator_name: koffi.array('char', 64),
+  comparator_ctx_str: koffi.array('char', 256),
+  comparator_fn_cached: 'void *',
+  comparator_ctx_cached: 'void *',
+  skip_list_max_level: 'int',
+  skip_list_probability: 'float',
+  default_isolation_level: 'int',
+  min_disk_space: 'uint64_t',
+  l1_file_count_trigger: 'int',
+  l0_queue_stall_threshold: 'int',
 });
-
-export const ColumnFamilyConfigPtr = ref.refType(ColumnFamilyConfig);
 
 // tidesdb_cache_stats_t structure
-export const CacheStatsStruct = Struct({
-  enabled: ref.types.int,
-  total_entries: ref.types.size_t,
-  total_bytes: ref.types.size_t,
-  hits: ref.types.uint64,
-  misses: ref.types.uint64,
-  hit_rate: ref.types.double,
-  num_partitions: ref.types.size_t,
+export const CacheStatsStruct = koffi.struct('tidesdb_cache_stats_t', {
+  enabled: 'int',
+  total_entries: 'size_t',
+  total_bytes: 'size_t',
+  hits: 'uint64_t',
+  misses: 'uint64_t',
+  hit_rate: 'double',
+  num_partitions: 'size_t',
 });
-
-export const CacheStatsPtr = ref.refType(CacheStatsStruct);
 
 // tidesdb_stats_t structure
-export const StatsStruct = Struct({
-  num_levels: ref.types.int,
-  memtable_size: ref.types.size_t,
-  level_sizes: sizeTPtr,
-  level_num_sstables: intPtr,
-  config: ColumnFamilyConfigPtr,
+export const StatsStruct = koffi.struct('tidesdb_stats_t', {
+  num_levels: 'int',
+  memtable_size: 'size_t',
+  level_sizes: 'size_t *',
+  level_num_sstables: 'int *',
+  config: koffi.pointer(ColumnFamilyConfigStruct),
 });
 
-export const StatsStructPtr = ref.refType(StatsStruct);
-export const StatsStructPtrPtr = ref.refType(StatsStructPtr);
+export const StatsStructPtr = koffi.pointer(StatsStruct);
 
 // Load the TidesDB library
-function loadLibrary(): ffi.Library {
-  const libName = process.platform === 'darwin' 
-    ? 'libtidesdb' 
-    : process.platform === 'win32' 
-      ? 'tidesdb' 
-      : 'libtidesdb';
-
-  return ffi.Library(libName, {
-    // Database operations
-    tidesdb_open: [ref.types.int, [TidesDBConfigPtr, tidesdbPtrPtr]],
-    tidesdb_close: [ref.types.int, [tidesdbPtr]],
-
-    // Default config
-    tidesdb_default_column_family_config: [ColumnFamilyConfig, []],
-    tidesdb_default_config: [TidesDBConfig, []],
-
-    // Comparator operations
-    tidesdb_register_comparator: [ref.types.int, [tidesdbPtr, charPtr, voidPtr, charPtr, voidPtr]],
-
-    // Column family operations
-    tidesdb_create_column_family: [ref.types.int, [tidesdbPtr, charPtr, ColumnFamilyConfigPtr]],
-    tidesdb_drop_column_family: [ref.types.int, [tidesdbPtr, charPtr]],
-    tidesdb_get_column_family: [columnFamilyPtr, [tidesdbPtr, charPtr]],
-    tidesdb_list_column_families: [ref.types.int, [tidesdbPtr, charPtrPtr, intPtr]],
-
-    // Transaction operations
-    tidesdb_txn_begin: [ref.types.int, [tidesdbPtr, txnPtrPtr]],
-    tidesdb_txn_begin_with_isolation: [ref.types.int, [tidesdbPtr, ref.types.int, txnPtrPtr]],
-    tidesdb_txn_put: [ref.types.int, [txnPtr, columnFamilyPtr, uint8Ptr, ref.types.size_t, uint8Ptr, ref.types.size_t, ref.types.int64]],
-    tidesdb_txn_get: [ref.types.int, [txnPtr, columnFamilyPtr, uint8Ptr, ref.types.size_t, uint8PtrPtr, sizeTPtr]],
-    tidesdb_txn_delete: [ref.types.int, [txnPtr, columnFamilyPtr, uint8Ptr, ref.types.size_t]],
-    tidesdb_txn_commit: [ref.types.int, [txnPtr]],
-    tidesdb_txn_rollback: [ref.types.int, [txnPtr]],
-    tidesdb_txn_free: [ref.types.void, [txnPtr]],
-
-    // Savepoint operations
-    tidesdb_txn_savepoint: [ref.types.int, [txnPtr, charPtr]],
-    tidesdb_txn_rollback_to_savepoint: [ref.types.int, [txnPtr, charPtr]],
-    tidesdb_txn_release_savepoint: [ref.types.int, [txnPtr, charPtr]],
-
-    // Iterator operations
-    tidesdb_iter_new: [ref.types.int, [txnPtr, columnFamilyPtr, iterPtrPtr]],
-    tidesdb_iter_seek: [ref.types.int, [iterPtr, uint8Ptr, ref.types.size_t]],
-    tidesdb_iter_seek_for_prev: [ref.types.int, [iterPtr, uint8Ptr, ref.types.size_t]],
-    tidesdb_iter_seek_to_first: [ref.types.int, [iterPtr]],
-    tidesdb_iter_seek_to_last: [ref.types.int, [iterPtr]],
-    tidesdb_iter_next: [ref.types.int, [iterPtr]],
-    tidesdb_iter_prev: [ref.types.int, [iterPtr]],
-    tidesdb_iter_valid: [ref.types.int, [iterPtr]],
-    tidesdb_iter_key: [ref.types.int, [iterPtr, uint8PtrPtr, sizeTPtr]],
-    tidesdb_iter_value: [ref.types.int, [iterPtr, uint8PtrPtr, sizeTPtr]],
-    tidesdb_iter_free: [ref.types.void, [iterPtr]],
-
-    // Maintenance operations
-    tidesdb_compact: [ref.types.int, [columnFamilyPtr]],
-    tidesdb_flush_memtable: [ref.types.int, [columnFamilyPtr]],
-
-    // Statistics operations
-    tidesdb_get_stats: [ref.types.int, [columnFamilyPtr, StatsStructPtrPtr]],
-    tidesdb_free_stats: [ref.types.void, [StatsStructPtr]],
-    tidesdb_get_cache_stats: [ref.types.int, [tidesdbPtr, CacheStatsPtr]],
-  });
+function getLibraryPath(): string {
+  if (process.platform === 'darwin') {
+    return 'libtidesdb.dylib';
+  } else if (process.platform === 'win32') {
+    return 'tidesdb.dll';
+  } else {
+    return 'libtidesdb.so';
+  }
 }
 
-export const lib = loadLibrary();
-export { ref };
+const libPath = getLibraryPath();
+export const lib = koffi.load(libPath);
+
+// Database operations
+export const tidesdb_open = lib.func('int tidesdb_open(tidesdb_config_t *config, _Out_ tidesdb_t **db)');
+export const tidesdb_close = lib.func('int tidesdb_close(tidesdb_t *db)');
+
+// Default config
+export const tidesdb_default_column_family_config = lib.func('tidesdb_column_family_config_t tidesdb_default_column_family_config()');
+
+// Column family operations
+export const tidesdb_create_column_family = lib.func('int tidesdb_create_column_family(tidesdb_t *db, const char *name, tidesdb_column_family_config_t *config)');
+export const tidesdb_drop_column_family = lib.func('int tidesdb_drop_column_family(tidesdb_t *db, const char *name)');
+export const tidesdb_get_column_family = lib.func('tidesdb_column_family_t *tidesdb_get_column_family(tidesdb_t *db, const char *name)');
+export const tidesdb_list_column_families = lib.func('int tidesdb_list_column_families(tidesdb_t *db, _Out_ char ***names, _Out_ int *count)');
+
+// Transaction operations
+export const tidesdb_txn_begin = lib.func('int tidesdb_txn_begin(tidesdb_t *db, _Out_ tidesdb_txn_t **txn)');
+export const tidesdb_txn_begin_with_isolation = lib.func('int tidesdb_txn_begin_with_isolation(tidesdb_t *db, int isolation, _Out_ tidesdb_txn_t **txn)');
+export const tidesdb_txn_put = lib.func('int tidesdb_txn_put(tidesdb_txn_t *txn, tidesdb_column_family_t *cf, const uint8_t *key, size_t key_size, const uint8_t *value, size_t value_size, int64_t ttl)');
+export const tidesdb_txn_get = lib.func('int tidesdb_txn_get(tidesdb_txn_t *txn, tidesdb_column_family_t *cf, const uint8_t *key, size_t key_size, _Out_ uint8_t **value, _Out_ size_t *value_size)');
+export const tidesdb_txn_delete = lib.func('int tidesdb_txn_delete(tidesdb_txn_t *txn, tidesdb_column_family_t *cf, const uint8_t *key, size_t key_size)');
+export const tidesdb_txn_commit = lib.func('int tidesdb_txn_commit(tidesdb_txn_t *txn)');
+export const tidesdb_txn_rollback = lib.func('int tidesdb_txn_rollback(tidesdb_txn_t *txn)');
+export const tidesdb_txn_free = lib.func('void tidesdb_txn_free(tidesdb_txn_t *txn)');
+
+// Savepoint operations
+export const tidesdb_txn_savepoint = lib.func('int tidesdb_txn_savepoint(tidesdb_txn_t *txn, const char *name)');
+export const tidesdb_txn_rollback_to_savepoint = lib.func('int tidesdb_txn_rollback_to_savepoint(tidesdb_txn_t *txn, const char *name)');
+export const tidesdb_txn_release_savepoint = lib.func('int tidesdb_txn_release_savepoint(tidesdb_txn_t *txn, const char *name)');
+
+// Iterator operations
+export const tidesdb_iter_new = lib.func('int tidesdb_iter_new(tidesdb_txn_t *txn, tidesdb_column_family_t *cf, _Out_ tidesdb_iter_t **iter)');
+export const tidesdb_iter_seek = lib.func('int tidesdb_iter_seek(tidesdb_iter_t *iter, const uint8_t *key, size_t key_size)');
+export const tidesdb_iter_seek_for_prev = lib.func('int tidesdb_iter_seek_for_prev(tidesdb_iter_t *iter, const uint8_t *key, size_t key_size)');
+export const tidesdb_iter_seek_to_first = lib.func('int tidesdb_iter_seek_to_first(tidesdb_iter_t *iter)');
+export const tidesdb_iter_seek_to_last = lib.func('int tidesdb_iter_seek_to_last(tidesdb_iter_t *iter)');
+export const tidesdb_iter_next = lib.func('int tidesdb_iter_next(tidesdb_iter_t *iter)');
+export const tidesdb_iter_prev = lib.func('int tidesdb_iter_prev(tidesdb_iter_t *iter)');
+export const tidesdb_iter_valid = lib.func('int tidesdb_iter_valid(tidesdb_iter_t *iter)');
+export const tidesdb_iter_key = lib.func('int tidesdb_iter_key(tidesdb_iter_t *iter, _Out_ uint8_t **key, _Out_ size_t *key_size)');
+export const tidesdb_iter_value = lib.func('int tidesdb_iter_value(tidesdb_iter_t *iter, _Out_ uint8_t **value, _Out_ size_t *value_size)');
+export const tidesdb_iter_free = lib.func('void tidesdb_iter_free(tidesdb_iter_t *iter)');
+
+// Maintenance operations
+export const tidesdb_compact = lib.func('int tidesdb_compact(tidesdb_column_family_t *cf)');
+export const tidesdb_flush_memtable = lib.func('int tidesdb_flush_memtable(tidesdb_column_family_t *cf)');
+
+// Comparator operations
+export const tidesdb_register_comparator = lib.func('int tidesdb_register_comparator(tidesdb_t *db, const char *name, void *fn, const char *ctx_str, void *ctx)');
+
+// Statistics operations
+export const tidesdb_get_stats = lib.func('int tidesdb_get_stats(tidesdb_column_family_t *cf, _Out_ tidesdb_stats_t **stats)');
+export const tidesdb_free_stats = lib.func('void tidesdb_free_stats(tidesdb_stats_t *stats)');
+export const tidesdb_get_cache_stats = lib.func('int tidesdb_get_cache_stats(tidesdb_t *db, _Out_ tidesdb_cache_stats_t *stats)');
+
+export { koffi };

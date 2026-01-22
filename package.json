@@ -1,6 +1,6 @@
 {
   "name": "tidesdb",
-  "version": "1.0.0",
+  "version": "0.2.0",
   "description": "TypeScript bindings for TidesDB - A high-performance embedded key-value storage engine",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -27,17 +27,11 @@
     "node": ">=16.0.0"
   },
   "dependencies": {
-    "ffi-napi": "^4.0.3",
-    "ref-napi": "^3.0.3",
-    "ref-struct-di": "^1.1.1",
-    "ref-array-di": "^1.2.2"
+    "koffi": "^2.9.0"
   },
   "devDependencies": {
-    "@types/ffi-napi": "^4.0.10",
     "@types/jest": "^29.5.12",
     "@types/node": "^20.11.0",
-    "@types/ref-napi": "^3.0.12",
-    "@types/ref-struct-di": "^1.1.12",
     "jest": "^29.7.0",
     "ts-jest": "^29.1.2",
     "typescript": "^5.3.3"

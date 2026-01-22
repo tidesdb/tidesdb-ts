@@ -15,18 +15,33 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { lib, ref, uint8PtrPtr, sizeTPtr, iterPtrPtr } from './ffi';
+import {
+  koffi,
+  tidesdb_txn_put,
+  tidesdb_txn_get,
+  tidesdb_txn_delete,
+  tidesdb_txn_commit,
+  tidesdb_txn_rollback,
+  tidesdb_txn_free,
+  tidesdb_txn_savepoint,
+  tidesdb_txn_rollback_to_savepoint,
+  tidesdb_txn_release_savepoint,
+  tidesdb_iter_new,
+} from './ffi';
 import { checkResult } from './error';
 import { ColumnFamily } from './column-family';
 import { Iterator } from './iterator';
+
+// Opaque pointer type for transaction
+type TxnPtr = unknown;
 
 /**
  * Represents a transaction in TidesDB.
  */
 export class Transaction {
-  private _txn: Buffer | null;
+  private _txn: TxnPtr | null;
 
-  constructor(txn: Buffer) {
+  constructor(txn: TxnPtr) {
     this._txn = txn;
   }
 
@@ -40,7 +55,7 @@ export class Transaction {
   put(cf: ColumnFamily, key: Buffer, value: Buffer, ttl: number = -1): void {
     if (!this._txn) throw new Error('Transaction has been freed');
 
-    const result = lib.tidesdb_txn_put(
+    const result = tidesdb_txn_put(
       this._txn,
       cf.ptr,
       key,
@@ -61,27 +76,24 @@ export class Transaction {
   get(cf: ColumnFamily, key: Buffer): Buffer {
     if (!this._txn) throw new Error('Transaction has been freed');
 
-    const valuePtrPtr = ref.alloc(uint8PtrPtr);
-    const valueSizePtr = ref.alloc(sizeTPtr);
+    const valuePtrOut: unknown[] = [null];
+    const valueSizeOut: number[] = [0];
 
-    const result = lib.tidesdb_txn_get(
+    const result = tidesdb_txn_get(
       this._txn,
       cf.ptr,
       key,
       key.length,
-      valuePtrPtr,
-      valueSizePtr
+      valuePtrOut,
+      valueSizeOut
     );
     checkResult(result, 'failed to get value');
 
-    const valuePtr = valuePtrPtr.deref();
-    const valueSize = valueSizePtr.deref() as unknown as number;
+    const valueSize = valueSizeOut[0];
+    if (valueSize === 0) return Buffer.alloc(0);
 
-    // Copy the data since the C library owns the memory
-    const value = Buffer.alloc(valueSize);
-    ref.reinterpret(valuePtr, valueSize, 0).copy(value);
-
-    return value;
+    // Decode the pointer to a buffer
+    return Buffer.from(koffi.decode(valuePtrOut[0], 'uint8_t', valueSize) as number[]);
   }
 
   /**
@@ -92,7 +104,7 @@ export class Transaction {
   delete(cf: ColumnFamily, key: Buffer): void {
     if (!this._txn) throw new Error('Transaction has been freed');
 
-    const result = lib.tidesdb_txn_delete(this._txn, cf.ptr, key, key.length);
+    const result = tidesdb_txn_delete(this._txn, cf.ptr, key, key.length);
     checkResult(result, 'failed to delete key');
   }
 
@@ -102,7 +114,7 @@ export class Transaction {
   commit(): void {
     if (!this._txn) throw new Error('Transaction has been freed');
 
-    const result = lib.tidesdb_txn_commit(this._txn);
+    const result = tidesdb_txn_commit(this._txn);
     checkResult(result, 'failed to commit transaction');
   }
 
@@ -112,7 +124,7 @@ export class Transaction {
   rollback(): void {
     if (!this._txn) throw new Error('Transaction has been freed');
 
-    const result = lib.tidesdb_txn_rollback(this._txn);
+    const result = tidesdb_txn_rollback(this._txn);
     checkResult(result, 'failed to rollback transaction');
   }
 
@@ -123,8 +135,7 @@ export class Transaction {
   savepoint(name: string): void {
     if (!this._txn) throw new Error('Transaction has been freed');
 
-    const cName = Buffer.from(name + '\0', 'utf8');
-    const result = lib.tidesdb_txn_savepoint(this._txn, cName);
+    const result = tidesdb_txn_savepoint(this._txn, name);
     checkResult(result, 'failed to create savepoint');
   }
 
@@ -135,8 +146,7 @@ export class Transaction {
   rollbackToSavepoint(name: string): void {
     if (!this._txn) throw new Error('Transaction has been freed');
 
-    const cName = Buffer.from(name + '\0', 'utf8');
-    const result = lib.tidesdb_txn_rollback_to_savepoint(this._txn, cName);
+    const result = tidesdb_txn_rollback_to_savepoint(this._txn, name);
     checkResult(result, 'failed to rollback to savepoint');
   }
 
@@ -147,8 +157,7 @@ export class Transaction {
   releaseSavepoint(name: string): void {
     if (!this._txn) throw new Error('Transaction has been freed');
 
-    const cName = Buffer.from(name + '\0', 'utf8');
-    const result = lib.tidesdb_txn_release_savepoint(this._txn, cName);
+    const result = tidesdb_txn_release_savepoint(this._txn, name);
     checkResult(result, 'failed to release savepoint');
   }
 
@@ -160,12 +169,11 @@ export class Transaction {
   newIterator(cf: ColumnFamily): Iterator {
     if (!this._txn) throw new Error('Transaction has been freed');
 
-    const iterPtrPtrBuf = ref.alloc(iterPtrPtr);
-    const result = lib.tidesdb_iter_new(this._txn, cf.ptr, iterPtrPtrBuf);
+    const iterPtrOut: unknown[] = [null];
+    const result = tidesdb_iter_new(this._txn, cf.ptr, iterPtrOut);
     checkResult(result, 'failed to create iterator');
 
-    const iterPtr = iterPtrPtrBuf.deref();
-    return new Iterator(iterPtr);
+    return new Iterator(iterPtrOut[0]);
   }
 
   /**
@@ -173,7 +181,7 @@ export class Transaction {
    */
   free(): void {
     if (this._txn) {
-      lib.tidesdb_txn_free(this._txn);
+      tidesdb_txn_free(this._txn);
       this._txn = null;
     }
   }
