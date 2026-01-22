@@ -185,17 +185,17 @@ jobs:
 
       - name: Install npm dependencies and build (Windows)
         if: runner.os == 'Windows'
-        shell: msys2 {0}
+        shell: pwsh
         run: |
-          export PATH="/mingw64/bin:$PATH"
+          $env:PATH = "C:\msys64\mingw64\bin;$env:PATH"
           cd tidesdb-ts
           npm install
           npm run build
 
       - name: Run tests (Windows)
         if: runner.os == 'Windows'
-        shell: msys2 {0}
+        shell: pwsh
         run: |
-          export PATH="/mingw64/bin:$PATH"
+          $env:PATH = "C:\msys64\mingw64\bin;$env:PATH"
           cd tidesdb-ts
           npm test
