@@ -16,7 +16,7 @@ TidesDB is a fast and efficient key-value storage engine library written in C. T
 - Savepoints for partial transaction rollback
 - Six built-in comparators plus custom registration
 
-For TypeScript usage you can go to the TidesDB TypeScript Reference [here](https://tidesdb.com/reference/ts/).
+For TypeScript usage you can go to the TidesDB TypeScript Reference [here](https://tidesdb.com/reference/typescript/).
 
 ## License
 
@@ -35,4 +35,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## Support
 
 - [Discord](https://discord.gg/tWEmjR66cy)
-- [GitHub Issues](https://github.com/tidesdb/tidesdb-rs/issues)
+- [GitHub Issues](https://github.com/tidesdb/tidesdb-ts/issues)
