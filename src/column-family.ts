@@ -16,13 +16,17 @@
 // limitations under the License.
 
 import {
+  koffi,
   tidesdb_get_stats,
   tidesdb_free_stats,
   tidesdb_compact,
   tidesdb_flush_memtable,
+  tidesdb_is_flushing,
+  tidesdb_is_compacting,
+  tidesdb_cf_update_runtime_config,
 } from './ffi';
 import { checkResult } from './error';
-import { Stats } from './types';
+import { Stats, ColumnFamilyConfig, CompressionAlgorithm, SyncMode, IsolationLevel } from './types';
 
 // Opaque pointer type for column family
 type CFPtr = unknown;
@@ -66,10 +70,36 @@ export class ColumnFamily {
 
     const numLevels = (statsPtr?.num_levels ?? 0) as number;
     const memtableSize = (statsPtr?.memtable_size ?? 0) as number;
+    const totalKeys = (statsPtr?.total_keys ?? 0) as number;
+    const totalDataSize = (statsPtr?.total_data_size ?? 0) as number;
+    const avgKeySize = (statsPtr?.avg_key_size ?? 0) as number;
+    const avgValueSize = (statsPtr?.avg_value_size ?? 0) as number;
+    const readAmp = (statsPtr?.read_amp ?? 0) as number;
+    const hitRate = (statsPtr?.hit_rate ?? 0) as number;
 
-    // For now, return basic stats - full stats parsing requires more complex memory handling
+    // Parse level arrays
     const levelSizes: number[] = [];
     const levelNumSSTables: number[] = [];
+    const levelKeyCounts: number[] = [];
+
+    if (numLevels > 0 && statsPtr) {
+      try {
+        if (statsPtr.level_sizes) {
+          const sizes = koffi.decode(statsPtr.level_sizes, 'size_t', numLevels) as number[];
+          levelSizes.push(...sizes);
+        }
+        if (statsPtr.level_num_sstables) {
+          const counts = koffi.decode(statsPtr.level_num_sstables, 'int', numLevels) as number[];
+          levelNumSSTables.push(...counts);
+        }
+        if (statsPtr.level_key_counts) {
+          const keyCounts = koffi.decode(statsPtr.level_key_counts, 'uint64_t', numLevels) as number[];
+          levelKeyCounts.push(...keyCounts);
+        }
+      } catch {
+        // If decoding fails, arrays remain empty
+      }
+    }
 
     if (statsPtr) {
       tidesdb_free_stats(statsPtr);
@@ -80,6 +110,13 @@ export class ColumnFamily {
       memtableSize,
       levelSizes,
       levelNumSSTables,
+      totalKeys,
+      totalDataSize,
+      avgKeySize,
+      avgValueSize,
+      levelKeyCounts,
+      readAmp,
+      hitRate,
     };
   }
 
@@ -97,5 +134,69 @@ export class ColumnFamily {
   flushMemtable(): void {
     const result = tidesdb_flush_memtable(this._cf);
     checkResult(result, 'failed to flush memtable');
+  }
+
+  /**
+   * Check if a flush operation is in progress.
+   * @returns true if flushing, false otherwise.
+   */
+  isFlushing(): boolean {
+    return tidesdb_is_flushing(this._cf) !== 0;
+  }
+
+  /**
+   * Check if a compaction operation is in progress.
+   * @returns true if compacting, false otherwise.
+   */
+  isCompacting(): boolean {
+    return tidesdb_is_compacting(this._cf) !== 0;
+  }
+
+  /**
+   * Update runtime-safe configuration settings.
+   * Changes apply to new operations only.
+   * @param config New configuration values.
+   * @param persistToDisk If true, save changes to config.ini.
+   */
+  updateRuntimeConfig(config: ColumnFamilyConfig, persistToDisk: boolean = false): void {
+    // Build the comparator_name as an array of char codes
+    const comparatorNameArr = new Array(64).fill(0);
+    if (config.comparatorName) {
+      const nameBytes = Buffer.from(config.comparatorName, 'utf8');
+      for (let i = 0; i < Math.min(nameBytes.length, 63); i++) {
+        comparatorNameArr[i] = nameBytes[i];
+      }
+    }
+
+    const comparatorCtxArr = new Array(256).fill(0);
+
+    const cConfig = {
+      write_buffer_size: config.writeBufferSize ?? 0,
+      level_size_ratio: config.levelSizeRatio ?? 0,
+      min_levels: config.minLevels ?? 0,
+      dividing_level_offset: config.dividingLevelOffset ?? 0,
+      klog_value_threshold: config.klogValueThreshold ?? 0,
+      compression_algorithm: config.compressionAlgorithm ?? CompressionAlgorithm.Lz4Compression,
+      enable_bloom_filter: config.enableBloomFilter ? 1 : 0,
+      bloom_fpr: config.bloomFpr ?? 0.01,
+      enable_block_indexes: config.enableBlockIndexes ? 1 : 0,
+      index_sample_ratio: config.indexSampleRatio ?? 1,
+      block_index_prefix_len: config.blockIndexPrefixLen ?? 16,
+      sync_mode: config.syncMode ?? SyncMode.Full,
+      sync_interval_us: config.syncIntervalUs ?? 128000,
+      comparator_name: comparatorNameArr,
+      comparator_ctx_str: comparatorCtxArr,
+      comparator_fn_cached: null,
+      comparator_ctx_cached: null,
+      skip_list_max_level: config.skipListMaxLevel ?? 12,
+      skip_list_probability: config.skipListProbability ?? 0.25,
+      default_isolation_level: config.defaultIsolationLevel ?? IsolationLevel.ReadCommitted,
+      min_disk_space: config.minDiskSpace ?? 100 * 1024 * 1024,
+      l1_file_count_trigger: config.l1FileCountTrigger ?? 4,
+      l0_queue_stall_threshold: config.l0QueueStallThreshold ?? 20,
+    };
+
+    const result = tidesdb_cf_update_runtime_config(this._cf, cConfig, persistToDisk ? 1 : 0);
+    checkResult(result, 'failed to update runtime config');
   }
 }
