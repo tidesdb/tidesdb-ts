@@ -155,6 +155,20 @@ export interface Stats {
   levelNumSSTables: number[];
   /** Column family configuration. */
   config?: ColumnFamilyConfig;
+  /** Total number of keys across memtable and all SSTables. */
+  totalKeys: number;
+  /** Total data size (klog + vlog) across all SSTables. */
+  totalDataSize: number;
+  /** Average key size in bytes. */
+  avgKeySize: number;
+  /** Average value size in bytes. */
+  avgValueSize: number;
+  /** Number of keys per level. */
+  levelKeyCounts: number[];
+  /** Read amplification (point lookup cost multiplier). */
+  readAmp: number;
+  /** Cache hit rate (0.0 if cache disabled). */
+  hitRate: number;
 }
 
 /**

@@ -49,7 +49,7 @@ export const ColumnFamilyConfigStruct = koffi.struct('tidesdb_column_family_conf
   min_levels: 'int',
   dividing_level_offset: 'int',
   klog_value_threshold: 'size_t',
-  compression_algo: 'int',
+  compression_algorithm: 'int',
   enable_bloom_filter: 'int',
   bloom_fpr: 'double',
   enable_block_indexes: 'int',
@@ -87,6 +87,13 @@ export const StatsStruct = koffi.struct('tidesdb_stats_t', {
   level_sizes: 'size_t *',
   level_num_sstables: 'int *',
   config: koffi.pointer(ColumnFamilyConfigStruct),
+  total_keys: 'uint64_t',
+  total_data_size: 'uint64_t',
+  avg_key_size: 'double',
+  avg_value_size: 'double',
+  level_key_counts: 'uint64_t *',
+  read_amp: 'double',
+  hit_rate: 'double',
 });
 
 export const StatsStructPtr = koffi.pointer(StatsStruct);
@@ -112,10 +119,12 @@ export const tidesdb_close = lib.func('int tidesdb_close(tidesdb_t *db)');
 
 // Default config
 export const tidesdb_default_column_family_config = lib.func('tidesdb_column_family_config_t tidesdb_default_column_family_config()');
+export const tidesdb_default_config = lib.func('tidesdb_config_t tidesdb_default_config()');
 
 // Column family operations
 export const tidesdb_create_column_family = lib.func('int tidesdb_create_column_family(tidesdb_t *db, const char *name, tidesdb_column_family_config_t *config)');
 export const tidesdb_drop_column_family = lib.func('int tidesdb_drop_column_family(tidesdb_t *db, const char *name)');
+export const tidesdb_rename_column_family = lib.func('int tidesdb_rename_column_family(tidesdb_t *db, const char *old_name, const char *new_name)');
 export const tidesdb_get_column_family = lib.func('tidesdb_column_family_t *tidesdb_get_column_family(tidesdb_t *db, const char *name)');
 export const tidesdb_list_column_families = lib.func('int tidesdb_list_column_families(tidesdb_t *db, _Out_ char ***names, _Out_ int *count)');
 
@@ -150,13 +159,25 @@ export const tidesdb_iter_free = lib.func('void tidesdb_iter_free(tidesdb_iter_t
 // Maintenance operations
 export const tidesdb_compact = lib.func('int tidesdb_compact(tidesdb_column_family_t *cf)');
 export const tidesdb_flush_memtable = lib.func('int tidesdb_flush_memtable(tidesdb_column_family_t *cf)');
+export const tidesdb_is_flushing = lib.func('int tidesdb_is_flushing(tidesdb_column_family_t *cf)');
+export const tidesdb_is_compacting = lib.func('int tidesdb_is_compacting(tidesdb_column_family_t *cf)');
+export const tidesdb_backup = lib.func('int tidesdb_backup(tidesdb_t *db, char *dir)');
 
 // Comparator operations
 export const tidesdb_register_comparator = lib.func('int tidesdb_register_comparator(tidesdb_t *db, const char *name, void *fn, const char *ctx_str, void *ctx)');
+export const tidesdb_get_comparator = lib.func('int tidesdb_get_comparator(tidesdb_t *db, const char *name, _Out_ void **fn, _Out_ void **ctx)');
+
+// Configuration operations
+export const tidesdb_cf_config_load_from_ini = lib.func('int tidesdb_cf_config_load_from_ini(const char *ini_file, const char *section_name, _Out_ tidesdb_column_family_config_t *config)');
+export const tidesdb_cf_config_save_to_ini = lib.func('int tidesdb_cf_config_save_to_ini(const char *ini_file, const char *section_name, tidesdb_column_family_config_t *config)');
+export const tidesdb_cf_update_runtime_config = lib.func('int tidesdb_cf_update_runtime_config(tidesdb_column_family_t *cf, tidesdb_column_family_config_t *new_config, int persist_to_disk)');
 
 // Statistics operations
 export const tidesdb_get_stats = lib.func('int tidesdb_get_stats(tidesdb_column_family_t *cf, _Out_ tidesdb_stats_t **stats)');
 export const tidesdb_free_stats = lib.func('void tidesdb_free_stats(tidesdb_stats_t *stats)');
 export const tidesdb_get_cache_stats = lib.func('int tidesdb_get_cache_stats(tidesdb_t *db, _Out_ tidesdb_cache_stats_t *stats)');
+
+// Memory management
+export const tidesdb_free = lib.func('void tidesdb_free(void *ptr)');
 
 export { koffi };

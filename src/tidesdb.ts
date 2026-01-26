@@ -22,12 +22,14 @@ import {
   tidesdb_default_column_family_config,
   tidesdb_create_column_family,
   tidesdb_drop_column_family,
+  tidesdb_rename_column_family,
   tidesdb_get_column_family,
   tidesdb_list_column_families,
   tidesdb_txn_begin,
   tidesdb_txn_begin_with_isolation,
   tidesdb_register_comparator,
   tidesdb_get_cache_stats,
+  tidesdb_backup,
 } from './ffi';
 import { checkResult, TidesDBError } from './error';
 import { ColumnFamily } from './column-family';
@@ -70,7 +72,7 @@ export function defaultColumnFamilyConfig(): ColumnFamilyConfig {
     minLevels: cConfig.min_levels as number,
     dividingLevelOffset: cConfig.dividing_level_offset as number,
     klogValueThreshold: cConfig.klog_value_threshold as number,
-    compressionAlgorithm: cConfig.compression_algo as CompressionAlgorithm,
+    compressionAlgorithm: cConfig.compression_algorithm as CompressionAlgorithm,
     enableBloomFilter: cConfig.enable_bloom_filter !== 0,
     bloomFpr: cConfig.bloom_fpr as number,
     enableBlockIndexes: cConfig.enable_block_indexes !== 0,
@@ -157,7 +159,7 @@ export class TidesDB {
       min_levels: mergedConfig.minLevels!,
       dividing_level_offset: mergedConfig.dividingLevelOffset!,
       klog_value_threshold: mergedConfig.klogValueThreshold!,
-      compression_algo: mergedConfig.compressionAlgorithm!,
+      compression_algorithm: mergedConfig.compressionAlgorithm!,
       enable_bloom_filter: mergedConfig.enableBloomFilter ? 1 : 0,
       bloom_fpr: mergedConfig.bloomFpr!,
       enable_block_indexes: mergedConfig.enableBlockIndexes ? 1 : 0,
@@ -189,6 +191,19 @@ export class TidesDB {
 
     const result = tidesdb_drop_column_family(this._db, name);
     checkResult(result, 'failed to drop column family');
+  }
+
+  /**
+   * Rename a column family atomically.
+   * Waits for any in-progress flush/compaction to complete before renaming.
+   * @param oldName Current name of the column family.
+   * @param newName New name for the column family.
+   */
+  renameColumnFamily(oldName: string, newName: string): void {
+    if (!this._db) throw new Error('Database has been closed');
+
+    const result = tidesdb_rename_column_family(this._db, oldName, newName);
+    checkResult(result, 'failed to rename column family');
   }
 
   /**
@@ -276,6 +291,17 @@ export class TidesDB {
 
     const result = tidesdb_register_comparator(this._db, name, null, ctxStr || null, null);
     checkResult(result, 'failed to register comparator');
+  }
+
+  /**
+   * Create an on-disk backup of the database without blocking reads/writes.
+   * @param dir Backup directory path (must be non-existent or empty).
+   */
+  backup(dir: string): void {
+    if (!this._db) throw new Error('Database has been closed');
+
+    const result = tidesdb_backup(this._db, dir);
+    checkResult(result, 'failed to create backup');
   }
 
   /**
