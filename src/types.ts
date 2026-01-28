@@ -93,6 +93,10 @@ export interface Config {
   blockCacheSize?: number;
   /** Maximum number of open SSTables. Default: 256 */
   maxOpenSSTables?: number;
+  /** Write logs to file instead of stderr. Default: false */
+  logToFile?: boolean;
+  /** Log file truncation size in bytes. Default: 24MB, 0 = no truncation */
+  logTruncationAt?: number;
 }
 
 /**
