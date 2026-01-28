@@ -58,6 +58,8 @@ export function defaultConfig(): Partial<Config> {
     logLevel: LogLevel.Info,
     blockCacheSize: 64 * 1024 * 1024,
     maxOpenSSTables: 256,
+    logToFile: false,
+    logTruncationAt: 24 * 1024 * 1024,
   };
 }
 
@@ -113,6 +115,8 @@ export class TidesDB {
       log_level: mergedConfig.logLevel!,
       block_cache_size: mergedConfig.blockCacheSize!,
       max_open_sstables: mergedConfig.maxOpenSSTables!,
+      log_to_file: mergedConfig.logToFile ? 1 : 0,
+      log_truncation_at: mergedConfig.logTruncationAt!,
     };
 
     const dbPtrOut: unknown[] = [null];

@@ -40,6 +40,8 @@ export const TidesDBConfigStruct = koffi.struct('tidesdb_config_t', {
   log_level: 'int',
   block_cache_size: 'size_t',
   max_open_sstables: 'size_t',
+  log_to_file: 'int',
+  log_truncation_at: 'size_t',
 });
 
 // tidesdb_column_family_config_t structure
