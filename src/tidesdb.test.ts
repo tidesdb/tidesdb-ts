@@ -297,6 +297,43 @@ describe('TidesDB', () => {
       const cf = db.getColumnFamily('custom_cf');
       expect(cf.name).toBe('custom_cf');
     });
+
+    test('create column family with B+tree format', () => {
+      db.createColumnFamily('btree_cf', {
+        useBtree: true,
+        enableBloomFilter: true,
+        bloomFpr: 0.01,
+      });
+
+      const cf = db.getColumnFamily('btree_cf');
+      expect(cf.name).toBe('btree_cf');
+
+      // Insert some data and verify stats include B+tree fields
+      const txn = db.beginTransaction();
+      for (let i = 0; i < 10; i++) {
+        const key = `btree_key${i}`;
+        const value = `btree_value${i}`;
+        txn.put(cf, Buffer.from(key), Buffer.from(value), -1);
+      }
+      txn.commit();
+      txn.free();
+
+      const stats = cf.getStats();
+      expect(stats.useBtree).toBe(true);
+    });
+
+    test('create column family with block-based format (default)', () => {
+      db.createColumnFamily('block_cf', {
+        useBtree: false,
+      });
+
+      const cf = db.getColumnFamily('block_cf');
+      const stats = cf.getStats();
+      expect(stats.useBtree).toBe(false);
+      expect(stats.btreeTotalNodes).toBeUndefined();
+      expect(stats.btreeMaxHeight).toBeUndefined();
+      expect(stats.btreeAvgHeight).toBeUndefined();
+    });
   });
 
   describe('Statistics', () => {
@@ -316,11 +353,40 @@ describe('TidesDB', () => {
 
       const stats = cf.getStats();
       expect(stats.numLevels).toBeGreaterThanOrEqual(0);
+      expect(typeof stats.useBtree).toBe('boolean');
+      expect(typeof stats.readAmp).toBe('number');
+      expect(typeof stats.hitRate).toBe('number');
     });
 
     test('get cache stats', () => {
       const stats = db.getCacheStats();
       expect(typeof stats.enabled).toBe('boolean');
+    });
+
+    test('B+tree stats populated when useBtree is true', () => {
+      db.createColumnFamily('btree_stats_cf', {
+        useBtree: true,
+      });
+
+      const cf = db.getColumnFamily('btree_stats_cf');
+
+      // Insert data and flush to create SSTables with B+tree format
+      const txn = db.beginTransaction();
+      for (let i = 0; i < 50; i++) {
+        const key = `bstats_key${i.toString().padStart(4, '0')}`;
+        const value = `bstats_value${i}`;
+        txn.put(cf, Buffer.from(key), Buffer.from(value), -1);
+      }
+      txn.commit();
+      txn.free();
+
+      const stats = cf.getStats();
+      expect(stats.useBtree).toBe(true);
+      // B+tree stats should be defined when useBtree is true
+      // (values may be 0 if no SSTables flushed yet, but should be defined)
+      expect(stats.btreeTotalNodes).toBeDefined();
+      expect(stats.btreeMaxHeight).toBeDefined();
+      expect(stats.btreeAvgHeight).toBeDefined();
     });
   });
 });

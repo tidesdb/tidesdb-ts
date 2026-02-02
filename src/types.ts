@@ -143,6 +143,8 @@ export interface ColumnFamilyConfig {
   l1FileCountTrigger?: number;
   /** L0 queue stall threshold for backpressure. */
   l0QueueStallThreshold?: number;
+  /** Use B+tree format for klog (default: false = block-based). */
+  useBtree?: boolean;
 }
 
 /**
@@ -173,6 +175,14 @@ export interface Stats {
   readAmp: number;
   /** Cache hit rate (0.0 if cache disabled). */
   hitRate: number;
+  /** Whether column family uses B+tree format. */
+  useBtree?: boolean;
+  /** Total B+tree nodes across all SSTables (only if useBtree=true). */
+  btreeTotalNodes?: number;
+  /** Maximum tree height across all SSTables (only if useBtree=true). */
+  btreeMaxHeight?: number;
+  /** Average tree height across all SSTables (only if useBtree=true). */
+  btreeAvgHeight?: number;
 }
 
 /**

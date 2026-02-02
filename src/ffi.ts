@@ -69,6 +69,7 @@ export const ColumnFamilyConfigStruct = koffi.struct('tidesdb_column_family_conf
   min_disk_space: 'uint64_t',
   l1_file_count_trigger: 'int',
   l0_queue_stall_threshold: 'int',
+  use_btree: 'int',
 });
 
 // tidesdb_cache_stats_t structure
@@ -96,6 +97,10 @@ export const StatsStruct = koffi.struct('tidesdb_stats_t', {
   level_key_counts: 'uint64_t *',
   read_amp: 'double',
   hit_rate: 'double',
+  use_btree: 'int',
+  btree_total_nodes: 'uint64_t',
+  btree_max_height: 'uint32_t',
+  btree_avg_height: 'double',
 });
 
 export const StatsStructPtr = koffi.pointer(StatsStruct);
