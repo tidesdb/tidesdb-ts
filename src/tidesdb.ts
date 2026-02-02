@@ -88,6 +88,7 @@ export function defaultColumnFamilyConfig(): ColumnFamilyConfig {
     minDiskSpace: cConfig.min_disk_space as number,
     l1FileCountTrigger: cConfig.l1_file_count_trigger as number,
     l0QueueStallThreshold: cConfig.l0_queue_stall_threshold as number,
+    useBtree: cConfig.use_btree !== 0,
   };
 }
 
@@ -181,6 +182,7 @@ export class TidesDB {
       min_disk_space: mergedConfig.minDiskSpace!,
       l1_file_count_trigger: mergedConfig.l1FileCountTrigger!,
       l0_queue_stall_threshold: mergedConfig.l0QueueStallThreshold!,
+      use_btree: mergedConfig.useBtree ? 1 : 0,
     };
 
     const result = tidesdb_create_column_family(this._db, name, cConfig);

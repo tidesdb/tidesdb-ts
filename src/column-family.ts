@@ -24,6 +24,7 @@ import {
   tidesdb_is_flushing,
   tidesdb_is_compacting,
   tidesdb_cf_update_runtime_config,
+  StatsStruct,
 } from './ffi';
 import { checkResult } from './error';
 import { Stats, ColumnFamilyConfig, CompressionAlgorithm, SyncMode, IsolationLevel } from './types';
@@ -66,34 +67,44 @@ export class ColumnFamily {
     const result = tidesdb_get_stats(this._cf, statsPtrOut);
     checkResult(result, 'failed to get stats');
 
-    const statsPtr = statsPtrOut[0] as Record<string, unknown>;
+    const statsPtr = statsPtrOut[0];
+    if (!statsPtr) {
+      throw new Error('failed to get stats: null pointer returned');
+    }
 
-    const numLevels = (statsPtr?.num_levels ?? 0) as number;
-    const memtableSize = (statsPtr?.memtable_size ?? 0) as number;
-    const totalKeys = (statsPtr?.total_keys ?? 0) as number;
-    const totalDataSize = (statsPtr?.total_data_size ?? 0) as number;
-    const avgKeySize = (statsPtr?.avg_key_size ?? 0) as number;
-    const avgValueSize = (statsPtr?.avg_value_size ?? 0) as number;
-    const readAmp = (statsPtr?.read_amp ?? 0) as number;
-    const hitRate = (statsPtr?.hit_rate ?? 0) as number;
+    // Decode the stats struct from the pointer
+    const decoded = koffi.decode(statsPtr, StatsStruct) as Record<string, unknown>;
+
+    const numLevels = (decoded.num_levels ?? 0) as number;
+    const memtableSize = (decoded.memtable_size ?? 0) as number;
+    const totalKeys = (decoded.total_keys ?? 0) as number;
+    const totalDataSize = (decoded.total_data_size ?? 0) as number;
+    const avgKeySize = (decoded.avg_key_size ?? 0) as number;
+    const avgValueSize = (decoded.avg_value_size ?? 0) as number;
+    const readAmp = (decoded.read_amp ?? 0) as number;
+    const hitRate = (decoded.hit_rate ?? 0) as number;
+    const useBtree = ((decoded.use_btree ?? 0) as number) !== 0;
+    const btreeTotalNodes = (decoded.btree_total_nodes ?? 0) as number;
+    const btreeMaxHeight = (decoded.btree_max_height ?? 0) as number;
+    const btreeAvgHeight = (decoded.btree_avg_height ?? 0) as number;
 
     // Parse level arrays
     const levelSizes: number[] = [];
     const levelNumSSTables: number[] = [];
     const levelKeyCounts: number[] = [];
 
-    if (numLevels > 0 && statsPtr) {
+    if (numLevels > 0) {
       try {
-        if (statsPtr.level_sizes) {
-          const sizes = koffi.decode(statsPtr.level_sizes, 'size_t', numLevels) as number[];
+        if (decoded.level_sizes) {
+          const sizes = koffi.decode(decoded.level_sizes, 'size_t', numLevels) as number[];
           levelSizes.push(...sizes);
         }
-        if (statsPtr.level_num_sstables) {
-          const counts = koffi.decode(statsPtr.level_num_sstables, 'int', numLevels) as number[];
+        if (decoded.level_num_sstables) {
+          const counts = koffi.decode(decoded.level_num_sstables, 'int', numLevels) as number[];
           levelNumSSTables.push(...counts);
         }
-        if (statsPtr.level_key_counts) {
-          const keyCounts = koffi.decode(statsPtr.level_key_counts, 'uint64_t', numLevels) as number[];
+        if (decoded.level_key_counts) {
+          const keyCounts = koffi.decode(decoded.level_key_counts, 'uint64_t', numLevels) as number[];
           levelKeyCounts.push(...keyCounts);
         }
       } catch {
@@ -101,9 +112,7 @@ export class ColumnFamily {
       }
     }
 
-    if (statsPtr) {
-      tidesdb_free_stats(statsPtr);
-    }
+    tidesdb_free_stats(statsPtr);
 
     return {
       numLevels,
@@ -117,6 +126,10 @@ export class ColumnFamily {
       levelKeyCounts,
       readAmp,
       hitRate,
+      useBtree,
+      btreeTotalNodes: useBtree ? btreeTotalNodes : undefined,
+      btreeMaxHeight: useBtree ? btreeMaxHeight : undefined,
+      btreeAvgHeight: useBtree ? btreeAvgHeight : undefined,
     };
   }
 
@@ -194,6 +207,7 @@ export class ColumnFamily {
       min_disk_space: config.minDiskSpace ?? 100 * 1024 * 1024,
       l1_file_count_trigger: config.l1FileCountTrigger ?? 4,
       l0_queue_stall_threshold: config.l0QueueStallThreshold ?? 20,
+      use_btree: config.useBtree ? 1 : 0,
     };
 
     const result = tidesdb_cf_update_runtime_config(this._cf, cConfig, persistToDisk ? 1 : 0);
