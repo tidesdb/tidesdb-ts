@@ -132,6 +132,7 @@ export const tidesdb_default_config = lib.func('tidesdb_config_t tidesdb_default
 export const tidesdb_create_column_family = lib.func('int tidesdb_create_column_family(tidesdb_t *db, const char *name, tidesdb_column_family_config_t *config)');
 export const tidesdb_drop_column_family = lib.func('int tidesdb_drop_column_family(tidesdb_t *db, const char *name)');
 export const tidesdb_rename_column_family = lib.func('int tidesdb_rename_column_family(tidesdb_t *db, const char *old_name, const char *new_name)');
+export const tidesdb_clone_column_family = lib.func('int tidesdb_clone_column_family(tidesdb_t *db, const char *source_name, const char *dest_name)');
 export const tidesdb_get_column_family = lib.func('tidesdb_column_family_t *tidesdb_get_column_family(tidesdb_t *db, const char *name)');
 export const tidesdb_list_column_families = lib.func('int tidesdb_list_column_families(tidesdb_t *db, _Out_ char ***names, _Out_ int *count)');
 
@@ -143,6 +144,7 @@ export const tidesdb_txn_get = lib.func('int tidesdb_txn_get(tidesdb_txn_t *txn,
 export const tidesdb_txn_delete = lib.func('int tidesdb_txn_delete(tidesdb_txn_t *txn, tidesdb_column_family_t *cf, const uint8_t *key, size_t key_size)');
 export const tidesdb_txn_commit = lib.func('int tidesdb_txn_commit(tidesdb_txn_t *txn)');
 export const tidesdb_txn_rollback = lib.func('int tidesdb_txn_rollback(tidesdb_txn_t *txn)');
+export const tidesdb_txn_reset = lib.func('int tidesdb_txn_reset(tidesdb_txn_t *txn, int isolation)');
 export const tidesdb_txn_free = lib.func('void tidesdb_txn_free(tidesdb_txn_t *txn)');
 
 // Savepoint operations

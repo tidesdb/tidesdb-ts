@@ -23,6 +23,7 @@ import {
   tidesdb_create_column_family,
   tidesdb_drop_column_family,
   tidesdb_rename_column_family,
+  tidesdb_clone_column_family,
   tidesdb_get_column_family,
   tidesdb_list_column_families,
   tidesdb_txn_begin,
@@ -210,6 +211,19 @@ export class TidesDB {
 
     const result = tidesdb_rename_column_family(this._db, oldName, newName);
     checkResult(result, 'failed to rename column family');
+  }
+
+  /**
+   * Clone a column family with all its data to a new name.
+   * The clone is completely independent of the source.
+   * @param sourceName Name of the source column family.
+   * @param destName Name for the cloned column family.
+   */
+  cloneColumnFamily(sourceName: string, destName: string): void {
+    if (!this._db) throw new Error('Database has been closed');
+
+    const result = tidesdb_clone_column_family(this._db, sourceName, destName);
+    checkResult(result, 'failed to clone column family');
   }
 
   /**

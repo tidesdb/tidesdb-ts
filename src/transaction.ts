@@ -22,6 +22,7 @@ import {
   tidesdb_txn_delete,
   tidesdb_txn_commit,
   tidesdb_txn_rollback,
+  tidesdb_txn_reset,
   tidesdb_txn_free,
   tidesdb_txn_savepoint,
   tidesdb_txn_rollback_to_savepoint,
@@ -31,6 +32,7 @@ import {
 import { checkResult } from './error';
 import { ColumnFamily } from './column-family';
 import { Iterator } from './iterator';
+import { IsolationLevel } from './types';
 
 // Opaque pointer type for transaction
 type TxnPtr = unknown;
@@ -174,6 +176,18 @@ export class Transaction {
     checkResult(result, 'failed to create iterator');
 
     return new Iterator(iterPtrOut[0]);
+  }
+
+  /**
+   * Reset a committed or aborted transaction for reuse with a new isolation level.
+   * This avoids the overhead of freeing and reallocating transaction resources.
+   * @param isolation New isolation level for the reset transaction.
+   */
+  reset(isolation: IsolationLevel): void {
+    if (!this._txn) throw new Error('Transaction has been freed');
+
+    const result = tidesdb_txn_reset(this._txn, isolation);
+    checkResult(result, 'failed to reset transaction');
   }
 
   /**

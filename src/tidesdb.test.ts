@@ -336,6 +336,144 @@ describe('TidesDB', () => {
     });
   });
 
+  describe('Clone Column Family', () => {
+    test('clone column family copies data', () => {
+      db.createColumnFamily('source_cf');
+      const cf = db.getColumnFamily('source_cf');
+
+      // Insert data into source
+      const txn = db.beginTransaction();
+      txn.put(cf, Buffer.from('key1'), Buffer.from('value1'), -1);
+      txn.put(cf, Buffer.from('key2'), Buffer.from('value2'), -1);
+      txn.commit();
+      txn.free();
+
+      // Clone the column family
+      db.cloneColumnFamily('source_cf', 'cloned_cf');
+
+      // Verify cloned data exists
+      const clonedCf = db.getColumnFamily('cloned_cf');
+      const readTxn = db.beginTransaction();
+      expect(readTxn.get(clonedCf, Buffer.from('key1')).toString()).toBe('value1');
+      expect(readTxn.get(clonedCf, Buffer.from('key2')).toString()).toBe('value2');
+      readTxn.free();
+    });
+
+    test('clone is independent from source', () => {
+      db.createColumnFamily('source_cf');
+      const cf = db.getColumnFamily('source_cf');
+
+      // Insert data into source
+      const txn = db.beginTransaction();
+      txn.put(cf, Buffer.from('key1'), Buffer.from('value1'), -1);
+      txn.commit();
+      txn.free();
+
+      // Clone
+      db.cloneColumnFamily('source_cf', 'cloned_cf');
+
+      // Write new data to source only
+      const writeTxn = db.beginTransaction();
+      writeTxn.put(cf, Buffer.from('key2'), Buffer.from('value2'), -1);
+      writeTxn.commit();
+      writeTxn.free();
+
+      // Verify clone does not have the new key
+      const clonedCf = db.getColumnFamily('cloned_cf');
+      const readTxn = db.beginTransaction();
+      expect(readTxn.get(clonedCf, Buffer.from('key1')).toString()).toBe('value1');
+      expect(() => readTxn.get(clonedCf, Buffer.from('key2'))).toThrow();
+      readTxn.free();
+    });
+
+    test('clone non-existent column family throws', () => {
+      expect(() => db.cloneColumnFamily('nonexistent', 'dest')).toThrow();
+    });
+
+    test('clone to existing name throws', () => {
+      db.createColumnFamily('source_cf');
+      db.createColumnFamily('existing_cf');
+      expect(() => db.cloneColumnFamily('source_cf', 'existing_cf')).toThrow();
+    });
+  });
+
+  describe('Transaction Reset', () => {
+    test('reset after commit and reuse', () => {
+      db.createColumnFamily('test_cf');
+      const cf = db.getColumnFamily('test_cf');
+
+      const txn = db.beginTransaction();
+
+      // First batch
+      txn.put(cf, Buffer.from('reset_key1'), Buffer.from('reset_value1'), -1);
+      txn.commit();
+
+      // Reset instead of free + begin
+      txn.reset(IsolationLevel.ReadCommitted);
+
+      // Second batch using the same transaction
+      txn.put(cf, Buffer.from('reset_key2'), Buffer.from('reset_value2'), -1);
+      txn.commit();
+
+      txn.free();
+
+      // Verify both keys exist
+      const readTxn = db.beginTransaction();
+      expect(readTxn.get(cf, Buffer.from('reset_key1')).toString()).toBe('reset_value1');
+      expect(readTxn.get(cf, Buffer.from('reset_key2')).toString()).toBe('reset_value2');
+      readTxn.free();
+    });
+
+    test('reset after rollback and reuse', () => {
+      db.createColumnFamily('test_cf');
+      const cf = db.getColumnFamily('test_cf');
+
+      const txn = db.beginTransaction();
+
+      // First batch - rollback
+      txn.put(cf, Buffer.from('rolled_back_key'), Buffer.from('value'), -1);
+      txn.rollback();
+
+      // Reset and do new work
+      txn.reset(IsolationLevel.ReadCommitted);
+
+      txn.put(cf, Buffer.from('after_reset_key'), Buffer.from('after_reset_value'), -1);
+      txn.commit();
+
+      txn.free();
+
+      // Verify rolled back key does not exist, but reset key does
+      const readTxn = db.beginTransaction();
+      expect(() => readTxn.get(cf, Buffer.from('rolled_back_key'))).toThrow();
+      expect(readTxn.get(cf, Buffer.from('after_reset_key')).toString()).toBe('after_reset_value');
+      readTxn.free();
+    });
+
+    test('reset with different isolation level', () => {
+      db.createColumnFamily('test_cf');
+      const cf = db.getColumnFamily('test_cf');
+
+      // Begin with default isolation
+      const txn = db.beginTransaction();
+      txn.put(cf, Buffer.from('iso_key1'), Buffer.from('iso_value1'), -1);
+      txn.commit();
+
+      // Reset with a different isolation level
+      txn.reset(IsolationLevel.Serializable);
+
+      txn.put(cf, Buffer.from('iso_key2'), Buffer.from('iso_value2'), -1);
+      txn.commit();
+
+      txn.free();
+
+      // Verify both keys exist
+      const readTxn = db.beginTransaction();
+      expect(readTxn.get(cf, Buffer.from('iso_key1')).toString()).toBe('iso_value1');
+      expect(readTxn.get(cf, Buffer.from('iso_key2')).toString()).toBe('iso_value2');
+      readTxn.free();
+    });
+  });
+
   describe('Statistics', () => {
     test('get column family stats', () => {
       db.createColumnFamily('test_cf');
