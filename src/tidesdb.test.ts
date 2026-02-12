@@ -486,23 +486,31 @@ describe('TidesDB', () => {
       txn.commit();
       txn.free();
 
-      // Create checkpoint
-      const checkpointDir = path.join(tempDir, 'checkpoint');
-      db.checkpoint(checkpointDir);
+      // Create checkpoint (must be outside the database directory)
+      const checkpointDir = createTempDir();
+      fs.rmSync(checkpointDir, { recursive: true, force: true });
+      try {
+        db.checkpoint(checkpointDir);
 
-      // Verify checkpoint directory was created
-      expect(fs.existsSync(checkpointDir)).toBe(true);
+        // Verify checkpoint directory was created
+        expect(fs.existsSync(checkpointDir)).toBe(true);
+      } finally {
+        removeTempDir(checkpointDir);
+      }
     });
 
     test('checkpoint to existing non-empty directory throws', () => {
       db.createColumnFamily('test_cf');
 
-      // Create a non-empty directory
-      const checkpointDir = path.join(tempDir, 'checkpoint_exists');
-      fs.mkdirSync(checkpointDir, { recursive: true });
+      // Create a non-empty directory outside the database path
+      const checkpointDir = createTempDir();
       fs.writeFileSync(path.join(checkpointDir, 'dummy'), 'data');
 
-      expect(() => db.checkpoint(checkpointDir)).toThrow();
+      try {
+        expect(() => db.checkpoint(checkpointDir)).toThrow();
+      } finally {
+        removeTempDir(checkpointDir);
+      }
     });
 
     test('checkpoint can be opened as a database', () => {
@@ -515,25 +523,30 @@ describe('TidesDB', () => {
       txn.commit();
       txn.free();
 
-      // Create checkpoint
-      const checkpointDir = path.join(tempDir, 'checkpoint_open');
-      db.checkpoint(checkpointDir);
-
-      // Open the checkpoint as a separate database
-      const cpDb = TidesDB.open({
-        dbPath: checkpointDir,
-        numFlushThreads: 1,
-        numCompactionThreads: 1,
-      });
-
+      // Create checkpoint (must be outside the database directory)
+      const checkpointDir = createTempDir();
+      fs.rmSync(checkpointDir, { recursive: true, force: true });
       try {
-        const cpCf = cpDb.getColumnFamily('test_cf');
-        const readTxn = cpDb.beginTransaction();
-        const value = readTxn.get(cpCf, Buffer.from('cp_key'));
-        expect(value.toString()).toBe('cp_value');
-        readTxn.free();
+        db.checkpoint(checkpointDir);
+
+        // Open the checkpoint as a separate database
+        const cpDb = TidesDB.open({
+          dbPath: checkpointDir,
+          numFlushThreads: 1,
+          numCompactionThreads: 1,
+        });
+
+        try {
+          const cpCf = cpDb.getColumnFamily('test_cf');
+          const readTxn = cpDb.beginTransaction();
+          const value = readTxn.get(cpCf, Buffer.from('cp_key'));
+          expect(value.toString()).toBe('cp_value');
+          readTxn.free();
+        } finally {
+          cpDb.close();
+        }
       } finally {
-        cpDb.close();
+        removeTempDir(checkpointDir);
       }
     });
   });
