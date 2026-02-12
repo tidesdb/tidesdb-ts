@@ -486,8 +486,9 @@ describe('TidesDB', () => {
       txn.commit();
       txn.free();
 
-      // Create checkpoint (must be outside the database directory, empty dir)
-      const checkpointDir = createTempDir();
+      // Create checkpoint (directory must NOT exist; the C library creates it)
+      const checkpointDir = path.join(os.tmpdir(), `tidesdb-checkpoint-${Date.now()}`);
+      fs.rmSync(checkpointDir, { recursive: true, force: true });
       try {
         db.checkpoint(checkpointDir);
 
@@ -503,7 +504,8 @@ describe('TidesDB', () => {
       db.createColumnFamily('test_cf');
 
       // Create a non-empty directory outside the database path
-      const checkpointDir = createTempDir();
+      const checkpointDir = path.join(os.tmpdir(), `tidesdb-checkpoint-nonempty-${Date.now()}`);
+      fs.mkdirSync(checkpointDir, { recursive: true });
       fs.writeFileSync(path.join(checkpointDir, 'dummy'), 'data');
 
       try {
@@ -523,8 +525,9 @@ describe('TidesDB', () => {
       txn.commit();
       txn.free();
 
-      // Create checkpoint (must be outside the database directory, empty dir)
-      const checkpointDir = createTempDir();
+      // Create checkpoint (directory must NOT exist; the C library creates it)
+      const checkpointDir = path.join(os.tmpdir(), `tidesdb-checkpoint-open-${Date.now()}`);
+      fs.rmSync(checkpointDir, { recursive: true, force: true });
       try {
         db.checkpoint(checkpointDir);
 
