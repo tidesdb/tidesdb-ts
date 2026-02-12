@@ -474,6 +474,107 @@ describe('TidesDB', () => {
     });
   });
 
+  describe('Checkpoint', () => {
+    // Use relative paths for checkpoint tests to avoid a Windows bug in the
+    // C library's tidesdb_checkpoint_ensure_parent_dir: it fails to stat/mkdir
+    // the drive-letter component (e.g. "C:") of absolute paths.  Other bindings
+    // (Go, Lua) also use relative paths.  Both DB and checkpoint must be on the
+    // same volume for hard links, so the DB is also opened from a relative path.
+    let cpDb: TidesDB;
+    let cpDbDir: string;
+
+    beforeEach(() => {
+      cpDbDir = `tidesdb-cp-test-${Date.now()}`;
+      cpDb = TidesDB.open({
+        dbPath: cpDbDir,
+        numFlushThreads: 2,
+        numCompactionThreads: 2,
+      });
+    });
+
+    afterEach(() => {
+      try { cpDb.close(); } catch { /* ignore */ }
+      fs.rmSync(cpDbDir, { recursive: true, force: true });
+    });
+
+    test('create checkpoint of database', () => {
+      cpDb.createColumnFamily('test_cf');
+      const cf = cpDb.getColumnFamily('test_cf');
+
+      // Insert data
+      const txn = cpDb.beginTransaction();
+      txn.put(cf, Buffer.from('cp_key1'), Buffer.from('cp_value1'), -1);
+      txn.put(cf, Buffer.from('cp_key2'), Buffer.from('cp_value2'), -1);
+      txn.commit();
+      txn.free();
+
+      // Create checkpoint (directory must NOT exist; the C library creates it)
+      const checkpointDir = `tidesdb-checkpoint-${Date.now()}`;
+      fs.rmSync(checkpointDir, { recursive: true, force: true });
+      try {
+        cpDb.checkpoint(checkpointDir);
+
+        // Verify checkpoint directory exists with contents
+        expect(fs.existsSync(checkpointDir)).toBe(true);
+        expect(fs.readdirSync(checkpointDir).length).toBeGreaterThan(0);
+      } finally {
+        fs.rmSync(checkpointDir, { recursive: true, force: true });
+      }
+    });
+
+    test('checkpoint to existing non-empty directory throws', () => {
+      cpDb.createColumnFamily('test_cf');
+
+      // Create a non-empty directory
+      const checkpointDir = `tidesdb-checkpoint-nonempty-${Date.now()}`;
+      fs.mkdirSync(checkpointDir, { recursive: true });
+      fs.writeFileSync(path.join(checkpointDir, 'dummy'), 'data');
+
+      try {
+        expect(() => cpDb.checkpoint(checkpointDir)).toThrow();
+      } finally {
+        fs.rmSync(checkpointDir, { recursive: true, force: true });
+      }
+    });
+
+    test('checkpoint can be opened as a database', () => {
+      cpDb.createColumnFamily('test_cf');
+      const cf = cpDb.getColumnFamily('test_cf');
+
+      // Insert data
+      const txn = cpDb.beginTransaction();
+      txn.put(cf, Buffer.from('cp_key'), Buffer.from('cp_value'), -1);
+      txn.commit();
+      txn.free();
+
+      // Create checkpoint (directory must NOT exist; the C library creates it)
+      const checkpointDir = `tidesdb-checkpoint-open-${Date.now()}`;
+      fs.rmSync(checkpointDir, { recursive: true, force: true });
+      try {
+        cpDb.checkpoint(checkpointDir);
+
+        // Open the checkpoint as a separate database
+        const cpOpenDb = TidesDB.open({
+          dbPath: checkpointDir,
+          numFlushThreads: 1,
+          numCompactionThreads: 1,
+        });
+
+        try {
+          const cpCf = cpOpenDb.getColumnFamily('test_cf');
+          const readTxn = cpOpenDb.beginTransaction();
+          const value = readTxn.get(cpCf, Buffer.from('cp_key'));
+          expect(value.toString()).toBe('cp_value');
+          readTxn.free();
+        } finally {
+          cpOpenDb.close();
+        }
+      } finally {
+        fs.rmSync(checkpointDir, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe('Statistics', () => {
     test('get column family stats', () => {
       db.createColumnFamily('test_cf');
