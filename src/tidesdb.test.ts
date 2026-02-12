@@ -486,14 +486,14 @@ describe('TidesDB', () => {
       txn.commit();
       txn.free();
 
-      // Create checkpoint (must be outside the database directory)
+      // Create checkpoint (must be outside the database directory, empty dir)
       const checkpointDir = createTempDir();
-      fs.rmSync(checkpointDir, { recursive: true, force: true });
       try {
         db.checkpoint(checkpointDir);
 
-        // Verify checkpoint directory was created
+        // Verify checkpoint directory exists with contents
         expect(fs.existsSync(checkpointDir)).toBe(true);
+        expect(fs.readdirSync(checkpointDir).length).toBeGreaterThan(0);
       } finally {
         removeTempDir(checkpointDir);
       }
@@ -523,9 +523,8 @@ describe('TidesDB', () => {
       txn.commit();
       txn.free();
 
-      // Create checkpoint (must be outside the database directory)
+      // Create checkpoint (must be outside the database directory, empty dir)
       const checkpointDir = createTempDir();
-      fs.rmSync(checkpointDir, { recursive: true, force: true });
       try {
         db.checkpoint(checkpointDir);
 
