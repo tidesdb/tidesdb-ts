@@ -171,6 +171,7 @@ export const tidesdb_flush_memtable = lib.func('int tidesdb_flush_memtable(tides
 export const tidesdb_is_flushing = lib.func('int tidesdb_is_flushing(tidesdb_column_family_t *cf)');
 export const tidesdb_is_compacting = lib.func('int tidesdb_is_compacting(tidesdb_column_family_t *cf)');
 export const tidesdb_backup = lib.func('int tidesdb_backup(tidesdb_t *db, char *dir)');
+export const tidesdb_checkpoint = lib.func('int tidesdb_checkpoint(tidesdb_t *db, const char *checkpoint_dir)');
 
 // Comparator operations
 export const tidesdb_register_comparator = lib.func('int tidesdb_register_comparator(tidesdb_t *db, const char *name, void *fn, const char *ctx_str, void *ctx)');

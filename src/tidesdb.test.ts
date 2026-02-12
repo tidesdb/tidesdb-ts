@@ -474,6 +474,70 @@ describe('TidesDB', () => {
     });
   });
 
+  describe('Checkpoint', () => {
+    test('create checkpoint of database', () => {
+      db.createColumnFamily('test_cf');
+      const cf = db.getColumnFamily('test_cf');
+
+      // Insert data
+      const txn = db.beginTransaction();
+      txn.put(cf, Buffer.from('cp_key1'), Buffer.from('cp_value1'), -1);
+      txn.put(cf, Buffer.from('cp_key2'), Buffer.from('cp_value2'), -1);
+      txn.commit();
+      txn.free();
+
+      // Create checkpoint
+      const checkpointDir = path.join(tempDir, 'checkpoint');
+      db.checkpoint(checkpointDir);
+
+      // Verify checkpoint directory was created
+      expect(fs.existsSync(checkpointDir)).toBe(true);
+    });
+
+    test('checkpoint to existing non-empty directory throws', () => {
+      db.createColumnFamily('test_cf');
+
+      // Create a non-empty directory
+      const checkpointDir = path.join(tempDir, 'checkpoint_exists');
+      fs.mkdirSync(checkpointDir, { recursive: true });
+      fs.writeFileSync(path.join(checkpointDir, 'dummy'), 'data');
+
+      expect(() => db.checkpoint(checkpointDir)).toThrow();
+    });
+
+    test('checkpoint can be opened as a database', () => {
+      db.createColumnFamily('test_cf');
+      const cf = db.getColumnFamily('test_cf');
+
+      // Insert data
+      const txn = db.beginTransaction();
+      txn.put(cf, Buffer.from('cp_key'), Buffer.from('cp_value'), -1);
+      txn.commit();
+      txn.free();
+
+      // Create checkpoint
+      const checkpointDir = path.join(tempDir, 'checkpoint_open');
+      db.checkpoint(checkpointDir);
+
+      // Open the checkpoint as a separate database
+      const cpDb = TidesDB.open({
+        dbPath: checkpointDir,
+        numFlushThreads: 1,
+        numCompactionThreads: 1,
+      });
+
+      try {
+        const cpCf = cpDb.getColumnFamily('test_cf');
+        const readTxn = cpDb.beginTransaction();
+        const value = readTxn.get(cpCf, Buffer.from('cp_key'));
+        expect(value.toString()).toBe('cp_value');
+        readTxn.free();
+      } finally {
+        cpDb.close();
+      }
+    });
+  });
+
   describe('Statistics', () => {
     test('get column family stats', () => {
       db.createColumnFamily('test_cf');

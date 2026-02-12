@@ -31,6 +31,7 @@ import {
   tidesdb_register_comparator,
   tidesdb_get_cache_stats,
   tidesdb_backup,
+  tidesdb_checkpoint,
 } from './ffi';
 import { checkResult, TidesDBError } from './error';
 import { ColumnFamily } from './column-family';
@@ -322,6 +323,18 @@ export class TidesDB {
 
     const result = tidesdb_backup(this._db, dir);
     checkResult(result, 'failed to create backup');
+  }
+
+  /**
+   * Create a lightweight, near-instant snapshot of the database using hard links.
+   * Much faster than backup() as it uses hard links instead of copying SSTable data.
+   * @param dir Checkpoint directory path (must be non-existent or empty, same filesystem).
+   */
+  checkpoint(dir: string): void {
+    if (!this._db) throw new Error('Database has been closed');
+
+    const result = tidesdb_checkpoint(this._db, dir);
+    checkResult(result, 'failed to create checkpoint');
   }
 
   /**
