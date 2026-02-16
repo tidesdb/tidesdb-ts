@@ -1,6 +1,6 @@
 {
   "name": "tidesdb",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "TypeScript bindings for TidesDB - A high-performance embedded key-value storage engine",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

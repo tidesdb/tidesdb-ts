@@ -160,7 +160,15 @@ export class TidesDB {
 
     const comparatorCtxArr = new Array(256).fill(0);
 
+    // Build the name as an array of char codes (128 bytes)
+    const nameArr = new Array(128).fill(0);
+    const cfNameBytes = Buffer.from(name, 'utf8');
+    for (let i = 0; i < Math.min(cfNameBytes.length, 127); i++) {
+      nameArr[i] = cfNameBytes[i];
+    }
+
     const cConfig = {
+      name: nameArr,
       write_buffer_size: mergedConfig.writeBufferSize!,
       level_size_ratio: mergedConfig.levelSizeRatio!,
       min_levels: mergedConfig.minLevels!,
