@@ -46,6 +46,7 @@ export const TidesDBConfigStruct = koffi.struct('tidesdb_config_t', {
 
 // tidesdb_column_family_config_t structure
 export const ColumnFamilyConfigStruct = koffi.struct('tidesdb_column_family_config_t', {
+  name: koffi.array('char', 128),
   write_buffer_size: 'size_t',
   level_size_ratio: 'size_t',
   min_levels: 'int',
