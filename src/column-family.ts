@@ -24,6 +24,7 @@ import {
   tidesdb_is_flushing,
   tidesdb_is_compacting,
   tidesdb_cf_update_runtime_config,
+  tidesdb_range_cost,
   StatsStruct,
 } from './ffi';
 import { checkResult } from './error';
@@ -212,5 +213,30 @@ export class ColumnFamily {
 
     const result = tidesdb_cf_update_runtime_config(this._cf, cConfig, persistToDisk ? 1 : 0);
     checkResult(result, 'failed to update runtime config');
+  }
+
+  /**
+   * Estimate the computational cost of iterating between two keys.
+   * The returned value is an opaque double — meaningful only for comparison
+   * with other values from the same function. Uses only in-memory metadata
+   * and performs no disk I/O.
+   * @param keyA First key (bound of range).
+   * @param keyB Second key (bound of range).
+   * @returns Estimated traversal cost (higher = more expensive).
+   */
+  rangeCost(keyA: Buffer, keyB: Buffer): number {
+    const costOut: number[] = [0.0];
+
+    const result = tidesdb_range_cost(
+      this._cf,
+      keyA,
+      keyA.length,
+      keyB,
+      keyB.length,
+      costOut
+    );
+    checkResult(result, 'failed to estimate range cost');
+
+    return costOut[0];
   }
 }
