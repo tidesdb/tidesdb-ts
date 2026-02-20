@@ -628,4 +628,76 @@ describe('TidesDB', () => {
       expect(stats.btreeAvgHeight).toBeDefined();
     });
   });
+
+  describe('Range Cost Estimation', () => {
+    test('rangeCost returns a number', () => {
+      db.createColumnFamily('range_cf');
+      const cf = db.getColumnFamily('range_cf');
+
+      // Insert some data
+      const txn = db.beginTransaction();
+      for (let i = 0; i < 100; i++) {
+        const key = `user:${i.toString().padStart(4, '0')}`;
+        const value = `value${i}`;
+        txn.put(cf, Buffer.from(key), Buffer.from(value), -1);
+      }
+      txn.commit();
+      txn.free();
+
+      const cost = cf.rangeCost(Buffer.from('user:0000'), Buffer.from('user:0099'));
+      expect(typeof cost).toBe('number');
+      expect(cost).toBeGreaterThanOrEqual(0);
+    });
+
+    test('rangeCost wider range costs more or equal to narrow range', () => {
+      db.createColumnFamily('range_cost_cf');
+      const cf = db.getColumnFamily('range_cost_cf');
+
+      // Insert data
+      const txn = db.beginTransaction();
+      for (let i = 0; i < 100; i++) {
+        const key = `key:${i.toString().padStart(4, '0')}`;
+        const value = `value${i}`;
+        txn.put(cf, Buffer.from(key), Buffer.from(value), -1);
+      }
+      txn.commit();
+      txn.free();
+
+      const narrowCost = cf.rangeCost(Buffer.from('key:0000'), Buffer.from('key:0010'));
+      const wideCost = cf.rangeCost(Buffer.from('key:0000'), Buffer.from('key:0099'));
+
+      expect(typeof narrowCost).toBe('number');
+      expect(typeof wideCost).toBe('number');
+      // Wide range should cost at least as much as narrow range
+      expect(wideCost).toBeGreaterThanOrEqual(narrowCost);
+    });
+
+    test('rangeCost key order does not matter', () => {
+      db.createColumnFamily('range_order_cf');
+      const cf = db.getColumnFamily('range_order_cf');
+
+      // Insert data
+      const txn = db.beginTransaction();
+      for (let i = 0; i < 50; i++) {
+        const key = `item:${i.toString().padStart(4, '0')}`;
+        const value = `val${i}`;
+        txn.put(cf, Buffer.from(key), Buffer.from(value), -1);
+      }
+      txn.commit();
+      txn.free();
+
+      const costAB = cf.rangeCost(Buffer.from('item:0000'), Buffer.from('item:0049'));
+      const costBA = cf.rangeCost(Buffer.from('item:0049'), Buffer.from('item:0000'));
+
+      expect(costAB).toBe(costBA);
+    });
+
+    test('rangeCost on empty column family returns zero', () => {
+      db.createColumnFamily('empty_range_cf');
+      const cf = db.getColumnFamily('empty_range_cf');
+
+      const cost = cf.rangeCost(Buffer.from('a'), Buffer.from('z'));
+      expect(cost).toBe(0);
+    });
+  });
 });

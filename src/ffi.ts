@@ -188,6 +188,9 @@ export const tidesdb_get_stats = lib.func('int tidesdb_get_stats(tidesdb_column_
 export const tidesdb_free_stats = lib.func('void tidesdb_free_stats(tidesdb_stats_t *stats)');
 export const tidesdb_get_cache_stats = lib.func('int tidesdb_get_cache_stats(tidesdb_t *db, _Out_ tidesdb_cache_stats_t *stats)');
 
+// Range cost estimation
+export const tidesdb_range_cost = lib.func('int tidesdb_range_cost(tidesdb_column_family_t *cf, const uint8_t *key_a, size_t key_a_size, const uint8_t *key_b, size_t key_b_size, _Out_ double *cost)');
+
 // Memory management
 export const tidesdb_free = lib.func('void tidesdb_free(void *ptr)');
 
