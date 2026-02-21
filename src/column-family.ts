@@ -25,10 +25,13 @@ import {
   tidesdb_is_compacting,
   tidesdb_cf_update_runtime_config,
   tidesdb_range_cost,
+  tidesdb_cf_set_commit_hook,
+  CommitOpStruct,
+  commitHookPtrType,
   StatsStruct,
 } from './ffi';
 import { checkResult } from './error';
-import { Stats, ColumnFamilyConfig, CompressionAlgorithm, SyncMode, IsolationLevel } from './types';
+import { Stats, ColumnFamilyConfig, CompressionAlgorithm, SyncMode, IsolationLevel, CommitOp, CommitHookCallback } from './types';
 
 // Opaque pointer type for column family
 type CFPtr = unknown;
@@ -39,6 +42,7 @@ type CFPtr = unknown;
 export class ColumnFamily {
   private _cf: CFPtr;
   private _name: string;
+  private _commitHookCb: unknown | null = null;
 
   constructor(cf: CFPtr, name: string) {
     this._cf = cf;
@@ -209,6 +213,8 @@ export class ColumnFamily {
       l1_file_count_trigger: config.l1FileCountTrigger ?? 4,
       l0_queue_stall_threshold: config.l0QueueStallThreshold ?? 20,
       use_btree: config.useBtree ? 1 : 0,
+      commit_hook_fn: null,
+      commit_hook_ctx: null,
     };
 
     const result = tidesdb_cf_update_runtime_config(this._cf, cConfig, persistToDisk ? 1 : 0);
@@ -216,14 +222,77 @@ export class ColumnFamily {
   }
 
   /**
-   * Estimate the computational cost of iterating between two keys.
-   * The returned value is an opaque double — meaningful only for comparison
-   * with other values from the same function. Uses only in-memory metadata
-   * and performs no disk I/O.
-   * @param keyA First key (bound of range).
-   * @param keyB Second key (bound of range).
-   * @returns Estimated traversal cost (higher = more expensive).
+   * Set a commit hook callback for this column family.
+   * The callback fires synchronously after every transaction commit,
+   * receiving the full batch of committed operations atomically.
+   * @param callback Function invoked with (ops, commitSeq). Return 0 on success.
    */
+  setCommitHook(callback: CommitHookCallback): void {
+    // Clear existing hook first
+    if (this._commitHookCb) {
+      this.clearCommitHook();
+    }
+
+    // Create wrapper that decodes C data to TypeScript types
+    const wrapper = (opsPtr: unknown, numOps: number, commitSeq: number, _ctx: unknown): number => {
+      try {
+        const ops: CommitOp[] = [];
+
+        if (numOps > 0 && opsPtr) {
+          const rawOps = koffi.decode(opsPtr, CommitOpStruct, numOps) as Array<Record<string, unknown>>;
+
+          for (const rawOp of rawOps) {
+            const keySize = rawOp.key_size as number;
+            const valueSize = rawOp.value_size as number;
+            const isDelete = (rawOp.is_delete as number) !== 0;
+
+            let key = Buffer.alloc(0);
+            if (rawOp.key && keySize > 0) {
+              const keyBytes = koffi.decode(rawOp.key, 'uint8_t', keySize) as number[];
+              key = Buffer.from(keyBytes);
+            }
+
+            let value: Buffer | null = null;
+            if (!isDelete && rawOp.value && valueSize > 0) {
+              const valueBytes = koffi.decode(rawOp.value, 'uint8_t', valueSize) as number[];
+              value = Buffer.from(valueBytes);
+            }
+
+            ops.push({
+              key,
+              value,
+              ttl: rawOp.ttl as number,
+              isDelete,
+            });
+          }
+        }
+
+        return callback(ops, commitSeq);
+      } catch {
+        return -1;
+      }
+    };
+
+    this._commitHookCb = koffi.register(wrapper, commitHookPtrType);
+
+    const result = tidesdb_cf_set_commit_hook(this._cf, this._commitHookCb, null);
+    checkResult(result, 'failed to set commit hook');
+  }
+
+  /**
+   * Clear the commit hook for this column family.
+   * Disables the callback immediately.
+   */
+  clearCommitHook(): void {
+    const result = tidesdb_cf_set_commit_hook(this._cf, null, null);
+    checkResult(result, 'failed to clear commit hook');
+
+    if (this._commitHookCb) {
+      koffi.unregister(this._commitHookCb as never);
+      this._commitHookCb = null;
+    }
+  }
+
   rangeCost(keyA: Buffer, keyB: Buffer): number {
     const costOut: number[] = [0.0];
 

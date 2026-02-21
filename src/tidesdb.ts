@@ -193,6 +193,8 @@ export class TidesDB {
       l1_file_count_trigger: mergedConfig.l1FileCountTrigger!,
       l0_queue_stall_threshold: mergedConfig.l0QueueStallThreshold!,
       use_btree: mergedConfig.useBtree ? 1 : 0,
+      commit_hook_fn: null,
+      commit_hook_ctx: null,
     };
 
     const result = tidesdb_create_column_family(this._db, name, cConfig);

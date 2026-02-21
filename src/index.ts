@@ -100,4 +100,6 @@ export {
   ColumnFamilyConfig,
   Stats,
   CacheStats,
+  CommitOp,
+  CommitHookCallback,
 } from './types';
