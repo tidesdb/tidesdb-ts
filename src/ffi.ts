@@ -44,6 +44,25 @@ export const TidesDBConfigStruct = koffi.struct('tidesdb_config_t', {
   log_truncation_at: 'size_t',
 });
 
+// tidesdb_commit_op_t structure (used by commit hook callback)
+export const CommitOpStruct = koffi.struct('tidesdb_commit_op_t', {
+  key: 'void *',
+  key_size: 'size_t',
+  value: 'void *',
+  value_size: 'size_t',
+  ttl: 'int64_t',
+  is_delete: 'int',
+});
+
+// Commit hook callback prototype
+const commitHookProto = koffi.proto('tidesdb_commit_hook_fn', 'int', [
+  'void *',      // const tidesdb_commit_op_t *ops
+  'int',         // num_ops
+  'uint64_t',    // commit_seq
+  'void *',      // ctx
+]);
+export const commitHookPtrType = koffi.pointer(commitHookProto);
+
 // tidesdb_column_family_config_t structure
 export const ColumnFamilyConfigStruct = koffi.struct('tidesdb_column_family_config_t', {
   name: koffi.array('char', 128),
@@ -71,6 +90,8 @@ export const ColumnFamilyConfigStruct = koffi.struct('tidesdb_column_family_conf
   l1_file_count_trigger: 'int',
   l0_queue_stall_threshold: 'int',
   use_btree: 'int',
+  commit_hook_fn: 'void *',
+  commit_hook_ctx: 'void *',
 });
 
 // tidesdb_cache_stats_t structure
@@ -187,6 +208,9 @@ export const tidesdb_cf_update_runtime_config = lib.func('int tidesdb_cf_update_
 export const tidesdb_get_stats = lib.func('int tidesdb_get_stats(tidesdb_column_family_t *cf, _Out_ tidesdb_stats_t **stats)');
 export const tidesdb_free_stats = lib.func('void tidesdb_free_stats(tidesdb_stats_t *stats)');
 export const tidesdb_get_cache_stats = lib.func('int tidesdb_get_cache_stats(tidesdb_t *db, _Out_ tidesdb_cache_stats_t *stats)');
+
+// Commit hook operations
+export const tidesdb_cf_set_commit_hook = lib.func('int tidesdb_cf_set_commit_hook(tidesdb_column_family_t *cf, tidesdb_commit_hook_fn *fn, void *ctx)');
 
 // Range cost estimation
 export const tidesdb_range_cost = lib.func('int tidesdb_range_cost(tidesdb_column_family_t *cf, const uint8_t *key_a, size_t key_a_size, const uint8_t *key_b, size_t key_b_size, _Out_ double *cost)');

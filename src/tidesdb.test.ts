@@ -24,6 +24,7 @@ import {
   CompressionAlgorithm,
   SyncMode,
   TidesDBError,
+  CommitOp,
 } from './index';
 
 function createTempDir(): string {
@@ -698,6 +699,154 @@ describe('TidesDB', () => {
 
       const cost = cf.rangeCost(Buffer.from('a'), Buffer.from('z'));
       expect(cost).toBe(0);
+    });
+  });
+
+  describe('Commit Hook (Change Data Capture)', () => {
+    test('commit hook fires on put', () => {
+      db.createColumnFamily('hook_cf');
+      const cf = db.getColumnFamily('hook_cf');
+
+      const captured: { ops: CommitOp[]; seq: number }[] = [];
+
+      cf.setCommitHook((ops, commitSeq) => {
+        captured.push({ ops: ops.slice(), seq: commitSeq });
+        return 0;
+      });
+
+      const txn = db.beginTransaction();
+      txn.put(cf, Buffer.from('hk1'), Buffer.from('hv1'), -1);
+      txn.commit();
+      txn.free();
+
+      expect(captured.length).toBeGreaterThanOrEqual(1);
+      const last = captured[captured.length - 1];
+      expect(last.ops.length).toBe(1);
+      expect(last.ops[0].key.toString()).toBe('hk1');
+      expect(last.ops[0].value!.toString()).toBe('hv1');
+      expect(last.ops[0].isDelete).toBe(false);
+      expect(last.seq).toBeGreaterThan(0);
+
+      cf.clearCommitHook();
+    });
+
+    test('commit hook fires on delete', () => {
+      db.createColumnFamily('hook_del_cf');
+      const cf = db.getColumnFamily('hook_del_cf');
+
+      // Insert a key first
+      const txn1 = db.beginTransaction();
+      txn1.put(cf, Buffer.from('dk1'), Buffer.from('dv1'), -1);
+      txn1.commit();
+      txn1.free();
+
+      const captured: CommitOp[][] = [];
+
+      cf.setCommitHook((ops) => {
+        captured.push(ops.slice());
+        return 0;
+      });
+
+      // Delete the key
+      const txn2 = db.beginTransaction();
+      txn2.delete(cf, Buffer.from('dk1'));
+      txn2.commit();
+      txn2.free();
+
+      expect(captured.length).toBeGreaterThanOrEqual(1);
+      const last = captured[captured.length - 1];
+      expect(last.length).toBe(1);
+      expect(last[0].key.toString()).toBe('dk1');
+      expect(last[0].isDelete).toBe(true);
+      expect(last[0].value).toBeNull();
+
+      cf.clearCommitHook();
+    });
+
+    test('commit hook receives multiple ops in one batch', () => {
+      db.createColumnFamily('hook_batch_cf');
+      const cf = db.getColumnFamily('hook_batch_cf');
+
+      const captured: CommitOp[][] = [];
+
+      cf.setCommitHook((ops) => {
+        captured.push(ops.slice());
+        return 0;
+      });
+
+      const txn = db.beginTransaction();
+      txn.put(cf, Buffer.from('bk1'), Buffer.from('bv1'), -1);
+      txn.put(cf, Buffer.from('bk2'), Buffer.from('bv2'), -1);
+      txn.put(cf, Buffer.from('bk3'), Buffer.from('bv3'), -1);
+      txn.commit();
+      txn.free();
+
+      expect(captured.length).toBeGreaterThanOrEqual(1);
+      const last = captured[captured.length - 1];
+      expect(last.length).toBe(3);
+
+      const keys = last.map((op) => op.key.toString()).sort();
+      expect(keys).toEqual(['bk1', 'bk2', 'bk3']);
+
+      cf.clearCommitHook();
+    });
+
+    test('clearCommitHook stops notifications', () => {
+      db.createColumnFamily('hook_clear_cf');
+      const cf = db.getColumnFamily('hook_clear_cf');
+
+      let callCount = 0;
+
+      cf.setCommitHook(() => {
+        callCount++;
+        return 0;
+      });
+
+      // First commit — hook should fire
+      const txn1 = db.beginTransaction();
+      txn1.put(cf, Buffer.from('ck1'), Buffer.from('cv1'), -1);
+      txn1.commit();
+      txn1.free();
+
+      const countAfterFirst = callCount;
+      expect(countAfterFirst).toBeGreaterThanOrEqual(1);
+
+      // Clear hook
+      cf.clearCommitHook();
+
+      // Second commit — hook should NOT fire
+      const txn2 = db.beginTransaction();
+      txn2.put(cf, Buffer.from('ck2'), Buffer.from('cv2'), -1);
+      txn2.commit();
+      txn2.free();
+
+      expect(callCount).toBe(countAfterFirst);
+    });
+
+    test('commit sequence numbers are monotonically increasing', () => {
+      db.createColumnFamily('hook_seq_cf');
+      const cf = db.getColumnFamily('hook_seq_cf');
+
+      const seqs: number[] = [];
+
+      cf.setCommitHook((_ops, commitSeq) => {
+        seqs.push(commitSeq);
+        return 0;
+      });
+
+      for (let i = 0; i < 5; i++) {
+        const txn = db.beginTransaction();
+        txn.put(cf, Buffer.from(`sk${i}`), Buffer.from(`sv${i}`), -1);
+        txn.commit();
+        txn.free();
+      }
+
+      expect(seqs.length).toBe(5);
+      for (let i = 1; i < seqs.length; i++) {
+        expect(seqs[i]).toBeGreaterThan(seqs[i - 1]);
+      }
+
+      cf.clearCommitHook();
     });
   });
 });

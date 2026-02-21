@@ -204,3 +204,25 @@ export interface CacheStats {
   /** Number of cache partitions. */
   numPartitions: number;
 }
+
+/**
+ * Represents a single operation in a committed transaction batch.
+ * Passed to commit hook callbacks.
+ */
+export interface CommitOp {
+  /** Key data. */
+  key: Buffer;
+  /** Value data (null for deletes). */
+  value: Buffer | null;
+  /** Time-to-live (Unix timestamp, -1 = no expiry). */
+  ttl: number;
+  /** Whether this is a delete operation. */
+  isDelete: boolean;
+}
+
+/**
+ * Callback function invoked after a transaction commits to a column family.
+ * Receives the full batch of operations atomically.
+ * Return 0 on success; non-zero is logged as a warning but does not roll back.
+ */
+export type CommitHookCallback = (ops: CommitOp[], commitSeq: number) => number;
