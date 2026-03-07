@@ -29,6 +29,7 @@ import {
   CommitOpStruct,
   commitHookPtrType,
   StatsStruct,
+  ColumnFamilyConfigStruct,
 } from './ffi';
 import { checkResult } from './error';
 import { Stats, ColumnFamilyConfig, CompressionAlgorithm, SyncMode, IsolationLevel, CommitOp, CommitHookCallback } from './types';
@@ -117,6 +118,38 @@ export class ColumnFamily {
       }
     }
 
+    // Decode config from the stats struct
+    let config: ColumnFamilyConfig | undefined;
+    if (decoded.config) {
+      try {
+        const cfgDecoded = koffi.decode(decoded.config, ColumnFamilyConfigStruct) as Record<string, unknown>;
+        config = {
+          writeBufferSize: cfgDecoded.write_buffer_size as number,
+          levelSizeRatio: cfgDecoded.level_size_ratio as number,
+          minLevels: cfgDecoded.min_levels as number,
+          dividingLevelOffset: cfgDecoded.dividing_level_offset as number,
+          klogValueThreshold: cfgDecoded.klog_value_threshold as number,
+          compressionAlgorithm: cfgDecoded.compression_algorithm as CompressionAlgorithm,
+          enableBloomFilter: (cfgDecoded.enable_bloom_filter as number) !== 0,
+          bloomFpr: cfgDecoded.bloom_fpr as number,
+          enableBlockIndexes: (cfgDecoded.enable_block_indexes as number) !== 0,
+          indexSampleRatio: cfgDecoded.index_sample_ratio as number,
+          blockIndexPrefixLen: cfgDecoded.block_index_prefix_len as number,
+          syncMode: cfgDecoded.sync_mode as SyncMode,
+          syncIntervalUs: cfgDecoded.sync_interval_us as number,
+          skipListMaxLevel: cfgDecoded.skip_list_max_level as number,
+          skipListProbability: cfgDecoded.skip_list_probability as number,
+          defaultIsolationLevel: cfgDecoded.default_isolation_level as IsolationLevel,
+          minDiskSpace: cfgDecoded.min_disk_space as number,
+          l1FileCountTrigger: cfgDecoded.l1_file_count_trigger as number,
+          l0QueueStallThreshold: cfgDecoded.l0_queue_stall_threshold as number,
+          useBtree: (cfgDecoded.use_btree as number) !== 0,
+        };
+      } catch {
+        // If decoding fails, config remains undefined
+      }
+    }
+
     tidesdb_free_stats(statsPtr);
 
     return {
@@ -124,6 +157,7 @@ export class ColumnFamily {
       memtableSize,
       levelSizes,
       levelNumSSTables,
+      config,
       totalKeys,
       totalDataSize,
       avgKeySize,

@@ -630,6 +630,40 @@ describe('TidesDB', () => {
     });
   });
 
+  describe('Custom Comparators', () => {
+    test('getComparator returns true for built-in comparators', () => {
+      expect(db.getComparator('memcmp')).toBe(true);
+      expect(db.getComparator('reverse')).toBe(true);
+      expect(db.getComparator('lexicographic')).toBe(true);
+      expect(db.getComparator('uint64')).toBe(true);
+      expect(db.getComparator('int64')).toBe(true);
+      expect(db.getComparator('case_insensitive')).toBe(true);
+    });
+
+    test('getComparator returns false for non-existent comparator', () => {
+      expect(db.getComparator('nonexistent_comparator')).toBe(false);
+    });
+  });
+
+  describe('Stats Config', () => {
+    test('getStats returns config field', () => {
+      db.createColumnFamily('stats_cfg_cf', {
+        compressionAlgorithm: CompressionAlgorithm.Lz4Compression,
+        enableBloomFilter: true,
+        bloomFpr: 0.01,
+      });
+      const cf = db.getColumnFamily('stats_cfg_cf');
+
+      const stats = cf.getStats();
+      expect(stats.config).toBeDefined();
+      if (stats.config) {
+        expect(typeof stats.config.writeBufferSize).toBe('number');
+        expect(stats.config.enableBloomFilter).toBe(true);
+        expect(stats.config.compressionAlgorithm).toBe(CompressionAlgorithm.Lz4Compression);
+      }
+    });
+  });
+
   describe('Range Cost Estimation', () => {
     test('rangeCost returns a number', () => {
       db.createColumnFamily('range_cf');
