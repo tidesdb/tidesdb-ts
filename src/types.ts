@@ -93,6 +93,8 @@ export interface Config {
   blockCacheSize?: number;
   /** Maximum number of open SSTables. Default: 256 */
   maxOpenSSTables?: number;
+  /** Global memory limit in bytes. Default: 0 (auto, 50% of system RAM). */
+  maxMemoryUsage?: number;
   /** Write logs to file instead of stderr. Default: false */
   logToFile?: boolean;
   /** Log file truncation size in bytes. Default: 24MB, 0 = no truncation */

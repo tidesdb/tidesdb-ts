@@ -29,6 +29,7 @@ import {
   tidesdb_txn_begin,
   tidesdb_txn_begin_with_isolation,
   tidesdb_register_comparator,
+  tidesdb_get_comparator,
   tidesdb_get_cache_stats,
   tidesdb_backup,
   tidesdb_checkpoint,
@@ -60,6 +61,7 @@ export function defaultConfig(): Partial<Config> {
     logLevel: LogLevel.Info,
     blockCacheSize: 64 * 1024 * 1024,
     maxOpenSSTables: 256,
+    maxMemoryUsage: 0,
     logToFile: false,
     logTruncationAt: 24 * 1024 * 1024,
   };
@@ -118,6 +120,7 @@ export class TidesDB {
       log_level: mergedConfig.logLevel!,
       block_cache_size: mergedConfig.blockCacheSize!,
       max_open_sstables: mergedConfig.maxOpenSSTables!,
+      max_memory_usage: mergedConfig.maxMemoryUsage!,
       log_to_file: mergedConfig.logToFile ? 1 : 0,
       log_truncation_at: mergedConfig.logTruncationAt!,
     };
@@ -322,6 +325,21 @@ export class TidesDB {
 
     const result = tidesdb_register_comparator(this._db, name, null, ctxStr || null, null);
     checkResult(result, 'failed to register comparator');
+  }
+
+  /**
+   * Retrieve a registered comparator by name.
+   * Returns true if the comparator is registered, false otherwise.
+   * @param name Name of the comparator to look up.
+   */
+  getComparator(name: string): boolean {
+    if (!this._db) throw new Error('Database has been closed');
+
+    const fnPtrOut: unknown[] = [null];
+    const ctxPtrOut: unknown[] = [null];
+
+    const result = tidesdb_get_comparator(this._db, name, fnPtrOut, ctxPtrOut);
+    return result === 0;
   }
 
   /**
