@@ -23,6 +23,7 @@ import {
   tidesdb_flush_memtable,
   tidesdb_is_flushing,
   tidesdb_is_compacting,
+  tidesdb_purge_cf,
   tidesdb_cf_update_runtime_config,
   tidesdb_range_cost,
   tidesdb_cf_set_commit_hook,
@@ -30,9 +31,17 @@ import {
   commitHookPtrType,
   StatsStruct,
   ColumnFamilyConfigStruct,
-} from './ffi';
-import { checkResult } from './error';
-import { Stats, ColumnFamilyConfig, CompressionAlgorithm, SyncMode, IsolationLevel, CommitOp, CommitHookCallback } from './types';
+} from "./ffi";
+import { checkResult } from "./error";
+import {
+  Stats,
+  ColumnFamilyConfig,
+  CompressionAlgorithm,
+  SyncMode,
+  IsolationLevel,
+  CommitOp,
+  CommitHookCallback,
+} from "./types";
 
 // Opaque pointer type for column family
 type CFPtr = unknown;
@@ -71,15 +80,18 @@ export class ColumnFamily {
     const statsPtrOut: unknown[] = [null];
 
     const result = tidesdb_get_stats(this._cf, statsPtrOut);
-    checkResult(result, 'failed to get stats');
+    checkResult(result, "failed to get stats");
 
     const statsPtr = statsPtrOut[0];
     if (!statsPtr) {
-      throw new Error('failed to get stats: null pointer returned');
+      throw new Error("failed to get stats: null pointer returned");
     }
 
     // Decode the stats struct from the pointer
-    const decoded = koffi.decode(statsPtr, StatsStruct) as Record<string, unknown>;
+    const decoded = koffi.decode(statsPtr, StatsStruct) as Record<
+      string,
+      unknown
+    >;
 
     const numLevels = (decoded.num_levels ?? 0) as number;
     const memtableSize = (decoded.memtable_size ?? 0) as number;
@@ -102,15 +114,27 @@ export class ColumnFamily {
     if (numLevels > 0) {
       try {
         if (decoded.level_sizes) {
-          const sizes = koffi.decode(decoded.level_sizes, 'size_t', numLevels) as number[];
+          const sizes = koffi.decode(
+            decoded.level_sizes,
+            "size_t",
+            numLevels,
+          ) as number[];
           levelSizes.push(...sizes);
         }
         if (decoded.level_num_sstables) {
-          const counts = koffi.decode(decoded.level_num_sstables, 'int', numLevels) as number[];
+          const counts = koffi.decode(
+            decoded.level_num_sstables,
+            "int",
+            numLevels,
+          ) as number[];
           levelNumSSTables.push(...counts);
         }
         if (decoded.level_key_counts) {
-          const keyCounts = koffi.decode(decoded.level_key_counts, 'uint64_t', numLevels) as number[];
+          const keyCounts = koffi.decode(
+            decoded.level_key_counts,
+            "uint64_t",
+            numLevels,
+          ) as number[];
           levelKeyCounts.push(...keyCounts);
         }
       } catch {
@@ -122,14 +146,18 @@ export class ColumnFamily {
     let config: ColumnFamilyConfig | undefined;
     if (decoded.config) {
       try {
-        const cfgDecoded = koffi.decode(decoded.config, ColumnFamilyConfigStruct) as Record<string, unknown>;
+        const cfgDecoded = koffi.decode(
+          decoded.config,
+          ColumnFamilyConfigStruct,
+        ) as Record<string, unknown>;
         config = {
           writeBufferSize: cfgDecoded.write_buffer_size as number,
           levelSizeRatio: cfgDecoded.level_size_ratio as number,
           minLevels: cfgDecoded.min_levels as number,
           dividingLevelOffset: cfgDecoded.dividing_level_offset as number,
           klogValueThreshold: cfgDecoded.klog_value_threshold as number,
-          compressionAlgorithm: cfgDecoded.compression_algorithm as CompressionAlgorithm,
+          compressionAlgorithm:
+            cfgDecoded.compression_algorithm as CompressionAlgorithm,
           enableBloomFilter: (cfgDecoded.enable_bloom_filter as number) !== 0,
           bloomFpr: cfgDecoded.bloom_fpr as number,
           enableBlockIndexes: (cfgDecoded.enable_block_indexes as number) !== 0,
@@ -139,7 +167,8 @@ export class ColumnFamily {
           syncIntervalUs: cfgDecoded.sync_interval_us as number,
           skipListMaxLevel: cfgDecoded.skip_list_max_level as number,
           skipListProbability: cfgDecoded.skip_list_probability as number,
-          defaultIsolationLevel: cfgDecoded.default_isolation_level as IsolationLevel,
+          defaultIsolationLevel:
+            cfgDecoded.default_isolation_level as IsolationLevel,
           minDiskSpace: cfgDecoded.min_disk_space as number,
           l1FileCountTrigger: cfgDecoded.l1_file_count_trigger as number,
           l0QueueStallThreshold: cfgDecoded.l0_queue_stall_threshold as number,
@@ -177,7 +206,7 @@ export class ColumnFamily {
    */
   compact(): void {
     const result = tidesdb_compact(this._cf);
-    checkResult(result, 'failed to compact column family');
+    checkResult(result, "failed to compact column family");
   }
 
   /**
@@ -185,7 +214,7 @@ export class ColumnFamily {
    */
   flushMemtable(): void {
     const result = tidesdb_flush_memtable(this._cf);
-    checkResult(result, 'failed to flush memtable');
+    checkResult(result, "failed to flush memtable");
   }
 
   /**
@@ -205,16 +234,27 @@ export class ColumnFamily {
   }
 
   /**
+   * Purge this column family by flushing and synchronously compacting.
+   */
+  purgeColumnFamily(): void {
+    const result = tidesdb_purge_cf(this._cf);
+    checkResult(result, "failed to purge column family");
+  }
+
+  /**
    * Update runtime-safe configuration settings.
    * Changes apply to new operations only.
    * @param config New configuration values.
    * @param persistToDisk If true, save changes to config.ini.
    */
-  updateRuntimeConfig(config: ColumnFamilyConfig, persistToDisk: boolean = false): void {
+  updateRuntimeConfig(
+    config: ColumnFamilyConfig,
+    persistToDisk: boolean = false,
+  ): void {
     // Build the comparator_name as an array of char codes
     const comparatorNameArr = new Array(64).fill(0);
     if (config.comparatorName) {
-      const nameBytes = Buffer.from(config.comparatorName, 'utf8');
+      const nameBytes = Buffer.from(config.comparatorName, "utf8");
       for (let i = 0; i < Math.min(nameBytes.length, 63); i++) {
         comparatorNameArr[i] = nameBytes[i];
       }
@@ -228,7 +268,8 @@ export class ColumnFamily {
       min_levels: config.minLevels ?? 0,
       dividing_level_offset: config.dividingLevelOffset ?? 0,
       klog_value_threshold: config.klogValueThreshold ?? 0,
-      compression_algorithm: config.compressionAlgorithm ?? CompressionAlgorithm.Lz4Compression,
+      compression_algorithm:
+        config.compressionAlgorithm ?? CompressionAlgorithm.Lz4Compression,
       enable_bloom_filter: config.enableBloomFilter ? 1 : 0,
       bloom_fpr: config.bloomFpr ?? 0.01,
       enable_block_indexes: config.enableBlockIndexes ? 1 : 0,
@@ -242,7 +283,8 @@ export class ColumnFamily {
       comparator_ctx_cached: null,
       skip_list_max_level: config.skipListMaxLevel ?? 12,
       skip_list_probability: config.skipListProbability ?? 0.25,
-      default_isolation_level: config.defaultIsolationLevel ?? IsolationLevel.ReadCommitted,
+      default_isolation_level:
+        config.defaultIsolationLevel ?? IsolationLevel.ReadCommitted,
       min_disk_space: config.minDiskSpace ?? 100 * 1024 * 1024,
       l1_file_count_trigger: config.l1FileCountTrigger ?? 4,
       l0_queue_stall_threshold: config.l0QueueStallThreshold ?? 20,
@@ -251,8 +293,12 @@ export class ColumnFamily {
       commit_hook_ctx: null,
     };
 
-    const result = tidesdb_cf_update_runtime_config(this._cf, cConfig, persistToDisk ? 1 : 0);
-    checkResult(result, 'failed to update runtime config');
+    const result = tidesdb_cf_update_runtime_config(
+      this._cf,
+      cConfig,
+      persistToDisk ? 1 : 0,
+    );
+    checkResult(result, "failed to update runtime config");
   }
 
   /**
@@ -268,12 +314,19 @@ export class ColumnFamily {
     }
 
     // Create wrapper that decodes C data to TypeScript types
-    const wrapper = (opsPtr: unknown, numOps: number, commitSeq: number, _ctx: unknown): number => {
+    const wrapper = (
+      opsPtr: unknown,
+      numOps: number,
+      commitSeq: number,
+      _ctx: unknown,
+    ): number => {
       try {
         const ops: CommitOp[] = [];
 
         if (numOps > 0 && opsPtr) {
-          const rawOps = koffi.decode(opsPtr, CommitOpStruct, numOps) as Array<Record<string, unknown>>;
+          const rawOps = koffi.decode(opsPtr, CommitOpStruct, numOps) as Array<
+            Record<string, unknown>
+          >;
 
           for (const rawOp of rawOps) {
             const keySize = rawOp.key_size as number;
@@ -282,13 +335,21 @@ export class ColumnFamily {
 
             let key = Buffer.alloc(0);
             if (rawOp.key && keySize > 0) {
-              const keyBytes = koffi.decode(rawOp.key, 'uint8_t', keySize) as number[];
+              const keyBytes = koffi.decode(
+                rawOp.key,
+                "uint8_t",
+                keySize,
+              ) as number[];
               key = Buffer.from(keyBytes);
             }
 
             let value: Buffer | null = null;
             if (!isDelete && rawOp.value && valueSize > 0) {
-              const valueBytes = koffi.decode(rawOp.value, 'uint8_t', valueSize) as number[];
+              const valueBytes = koffi.decode(
+                rawOp.value,
+                "uint8_t",
+                valueSize,
+              ) as number[];
               value = Buffer.from(valueBytes);
             }
 
@@ -309,8 +370,12 @@ export class ColumnFamily {
 
     this._commitHookCb = koffi.register(wrapper, commitHookPtrType);
 
-    const result = tidesdb_cf_set_commit_hook(this._cf, this._commitHookCb, null);
-    checkResult(result, 'failed to set commit hook');
+    const result = tidesdb_cf_set_commit_hook(
+      this._cf,
+      this._commitHookCb,
+      null,
+    );
+    checkResult(result, "failed to set commit hook");
   }
 
   /**
@@ -319,7 +384,7 @@ export class ColumnFamily {
    */
   clearCommitHook(): void {
     const result = tidesdb_cf_set_commit_hook(this._cf, null, null);
-    checkResult(result, 'failed to clear commit hook');
+    checkResult(result, "failed to clear commit hook");
 
     if (this._commitHookCb) {
       koffi.unregister(this._commitHookCb as never);
@@ -336,9 +401,9 @@ export class ColumnFamily {
       keyA.length,
       keyB,
       keyB.length,
-      costOut
+      costOut,
     );
-    checkResult(result, 'failed to estimate range cost');
+    checkResult(result, "failed to estimate range cost");
 
     return costOut[0];
   }

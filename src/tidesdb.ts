@@ -33,10 +33,11 @@ import {
   tidesdb_get_cache_stats,
   tidesdb_backup,
   tidesdb_checkpoint,
-} from './ffi';
-import { checkResult, TidesDBError } from './error';
-import { ColumnFamily } from './column-family';
-import { Transaction } from './transaction';
+  tidesdb_purge,
+} from "./ffi";
+import { checkResult, TidesDBError } from "./error";
+import { ColumnFamily } from "./column-family";
+import { Transaction } from "./transaction";
 import {
   Config,
   ColumnFamilyConfig,
@@ -46,7 +47,7 @@ import {
   CompressionAlgorithm,
   SyncMode,
   ErrorCode,
-} from './types';
+} from "./types";
 
 // Opaque pointer type for database
 type DBPtr = unknown;
@@ -127,7 +128,7 @@ export class TidesDB {
 
     const dbPtrOut: unknown[] = [null];
     const result = tidesdb_open(cConfig, dbPtrOut);
-    checkResult(result, 'failed to open database');
+    checkResult(result, "failed to open database");
 
     return new TidesDB(dbPtrOut[0]);
   }
@@ -139,7 +140,7 @@ export class TidesDB {
     if (this._db) {
       const result = tidesdb_close(this._db);
       this._db = null;
-      checkResult(result, 'failed to close database');
+      checkResult(result, "failed to close database");
     }
   }
 
@@ -147,7 +148,7 @@ export class TidesDB {
    * Create a new column family with the given configuration.
    */
   createColumnFamily(name: string, config: ColumnFamilyConfig = {}): void {
-    if (!this._db) throw new Error('Database has been closed');
+    if (!this._db) throw new Error("Database has been closed");
 
     const defaults = defaultColumnFamilyConfig();
     const mergedConfig = { ...defaults, ...config };
@@ -155,7 +156,7 @@ export class TidesDB {
     // Build the comparator_name as an array of char codes
     const comparatorNameArr = new Array(64).fill(0);
     if (mergedConfig.comparatorName) {
-      const nameBytes = Buffer.from(mergedConfig.comparatorName, 'utf8');
+      const nameBytes = Buffer.from(mergedConfig.comparatorName, "utf8");
       for (let i = 0; i < Math.min(nameBytes.length, 63); i++) {
         comparatorNameArr[i] = nameBytes[i];
       }
@@ -165,7 +166,7 @@ export class TidesDB {
 
     // Build the name as an array of char codes (128 bytes)
     const nameArr = new Array(128).fill(0);
-    const cfNameBytes = Buffer.from(name, 'utf8');
+    const cfNameBytes = Buffer.from(name, "utf8");
     for (let i = 0; i < Math.min(cfNameBytes.length, 127); i++) {
       nameArr[i] = cfNameBytes[i];
     }
@@ -201,17 +202,17 @@ export class TidesDB {
     };
 
     const result = tidesdb_create_column_family(this._db, name, cConfig);
-    checkResult(result, 'failed to create column family');
+    checkResult(result, "failed to create column family");
   }
 
   /**
    * Drop a column family and all associated data.
    */
   dropColumnFamily(name: string): void {
-    if (!this._db) throw new Error('Database has been closed');
+    if (!this._db) throw new Error("Database has been closed");
 
     const result = tidesdb_drop_column_family(this._db, name);
-    checkResult(result, 'failed to drop column family');
+    checkResult(result, "failed to drop column family");
   }
 
   /**
@@ -221,10 +222,10 @@ export class TidesDB {
    * @param newName New name for the column family.
    */
   renameColumnFamily(oldName: string, newName: string): void {
-    if (!this._db) throw new Error('Database has been closed');
+    if (!this._db) throw new Error("Database has been closed");
 
     const result = tidesdb_rename_column_family(this._db, oldName, newName);
-    checkResult(result, 'failed to rename column family');
+    checkResult(result, "failed to rename column family");
   }
 
   /**
@@ -234,22 +235,25 @@ export class TidesDB {
    * @param destName Name for the cloned column family.
    */
   cloneColumnFamily(sourceName: string, destName: string): void {
-    if (!this._db) throw new Error('Database has been closed');
+    if (!this._db) throw new Error("Database has been closed");
 
     const result = tidesdb_clone_column_family(this._db, sourceName, destName);
-    checkResult(result, 'failed to clone column family');
+    checkResult(result, "failed to clone column family");
   }
 
   /**
    * Get a column family by name.
    */
   getColumnFamily(name: string): ColumnFamily {
-    if (!this._db) throw new Error('Database has been closed');
+    if (!this._db) throw new Error("Database has been closed");
 
     const cfPtr = tidesdb_get_column_family(this._db, name);
 
     if (!cfPtr) {
-      throw new TidesDBError(ErrorCode.ErrNotFound, `column family not found: ${name}`);
+      throw new TidesDBError(
+        ErrorCode.ErrNotFound,
+        `column family not found: ${name}`,
+      );
     }
 
     return new ColumnFamily(cfPtr, name);
@@ -259,13 +263,17 @@ export class TidesDB {
    * List all column families in the database.
    */
   listColumnFamilies(): string[] {
-    if (!this._db) throw new Error('Database has been closed');
+    if (!this._db) throw new Error("Database has been closed");
 
     const namesPtrOut: unknown[] = [null];
     const countOut: number[] = [0];
 
-    const result = tidesdb_list_column_families(this._db, namesPtrOut, countOut);
-    checkResult(result, 'failed to list column families');
+    const result = tidesdb_list_column_families(
+      this._db,
+      namesPtrOut,
+      countOut,
+    );
+    checkResult(result, "failed to list column families");
 
     const count = countOut[0];
     if (count === 0 || !namesPtrOut[0]) {
@@ -276,11 +284,15 @@ export class TidesDB {
     const names: string[] = [];
     try {
       // Read array of char* pointers
-      const ptrArray = koffi.decode(namesPtrOut[0], 'char *', count) as unknown[];
+      const ptrArray = koffi.decode(
+        namesPtrOut[0],
+        "char *",
+        count,
+      ) as unknown[];
       for (let i = 0; i < count; i++) {
         if (ptrArray[i]) {
           // Decode each char* to string
-          names.push(koffi.decode(ptrArray[i], 'char', 256) as string);
+          names.push(koffi.decode(ptrArray[i], "char", 256) as string);
         }
       }
     } catch {
@@ -295,11 +307,11 @@ export class TidesDB {
    * Begin a new transaction with default isolation level.
    */
   beginTransaction(): Transaction {
-    if (!this._db) throw new Error('Database has been closed');
+    if (!this._db) throw new Error("Database has been closed");
 
     const txnPtrOut: unknown[] = [null];
     const result = tidesdb_txn_begin(this._db, txnPtrOut);
-    checkResult(result, 'failed to begin transaction');
+    checkResult(result, "failed to begin transaction");
 
     return new Transaction(txnPtrOut[0]);
   }
@@ -308,11 +320,15 @@ export class TidesDB {
    * Begin a new transaction with the specified isolation level.
    */
   beginTransactionWithIsolation(isolation: IsolationLevel): Transaction {
-    if (!this._db) throw new Error('Database has been closed');
+    if (!this._db) throw new Error("Database has been closed");
 
     const txnPtrOut: unknown[] = [null];
-    const result = tidesdb_txn_begin_with_isolation(this._db, isolation, txnPtrOut);
-    checkResult(result, 'failed to begin transaction with isolation');
+    const result = tidesdb_txn_begin_with_isolation(
+      this._db,
+      isolation,
+      txnPtrOut,
+    );
+    checkResult(result, "failed to begin transaction with isolation");
 
     return new Transaction(txnPtrOut[0]);
   }
@@ -320,11 +336,17 @@ export class TidesDB {
   /**
    * Register a custom comparator with the database.
    */
-  registerComparator(name: string, ctxStr: string = ''): void {
-    if (!this._db) throw new Error('Database has been closed');
+  registerComparator(name: string, ctxStr: string = ""): void {
+    if (!this._db) throw new Error("Database has been closed");
 
-    const result = tidesdb_register_comparator(this._db, name, null, ctxStr || null, null);
-    checkResult(result, 'failed to register comparator');
+    const result = tidesdb_register_comparator(
+      this._db,
+      name,
+      null,
+      ctxStr || null,
+      null,
+    );
+    checkResult(result, "failed to register comparator");
   }
 
   /**
@@ -333,7 +355,7 @@ export class TidesDB {
    * @param name Name of the comparator to look up.
    */
   getComparator(name: string): boolean {
-    if (!this._db) throw new Error('Database has been closed');
+    if (!this._db) throw new Error("Database has been closed");
 
     const fnPtrOut: unknown[] = [null];
     const ctxPtrOut: unknown[] = [null];
@@ -347,10 +369,10 @@ export class TidesDB {
    * @param dir Backup directory path (must be non-existent or empty).
    */
   backup(dir: string): void {
-    if (!this._db) throw new Error('Database has been closed');
+    if (!this._db) throw new Error("Database has been closed");
 
     const result = tidesdb_backup(this._db, dir);
-    checkResult(result, 'failed to create backup');
+    checkResult(result, "failed to create backup");
   }
 
   /**
@@ -359,17 +381,28 @@ export class TidesDB {
    * @param dir Checkpoint directory path (must be non-existent or empty, same filesystem).
    */
   checkpoint(dir: string): void {
-    if (!this._db) throw new Error('Database has been closed');
+    if (!this._db) throw new Error("Database has been closed");
 
     const result = tidesdb_checkpoint(this._db, dir);
-    checkResult(result, 'failed to create checkpoint');
+    checkResult(result, "failed to create checkpoint");
+  }
+
+  /**
+   * Purge the entire database by flushing all column families and
+   * synchronously draining flush/compaction work.
+   */
+  purge(): void {
+    if (!this._db) throw new Error("Database has been closed");
+
+    const result = tidesdb_purge(this._db);
+    checkResult(result, "failed to purge database");
   }
 
   /**
    * Get statistics about the block cache.
    */
   getCacheStats(): CacheStats {
-    if (!this._db) throw new Error('Database has been closed');
+    if (!this._db) throw new Error("Database has been closed");
 
     const cStats = {
       enabled: 0,
@@ -382,7 +415,7 @@ export class TidesDB {
     };
 
     const result = tidesdb_get_cache_stats(this._db, cStats);
-    checkResult(result, 'failed to get cache stats');
+    checkResult(result, "failed to get cache stats");
 
     return {
       enabled: cStats.enabled !== 0,
