@@ -859,6 +859,109 @@ describe("TidesDB", () => {
     });
   });
 
+  describe("Sync WAL", () => {
+    test("syncWal succeeds on column family", () => {
+      db.createColumnFamily("sync_wal_cf", {
+        syncMode: SyncMode.None,
+      });
+      const cf = db.getColumnFamily("sync_wal_cf");
+
+      // Write some data
+      const txn = db.beginTransaction();
+      txn.put(cf, Buffer.from("wal_key1"), Buffer.from("wal_value1"), -1);
+      txn.put(cf, Buffer.from("wal_key2"), Buffer.from("wal_value2"), -1);
+      txn.commit();
+      txn.free();
+
+      // Force WAL sync
+      expect(() => cf.syncWal()).not.toThrow();
+    });
+
+    test("syncWal on interval sync mode", () => {
+      db.createColumnFamily("sync_wal_interval_cf", {
+        syncMode: SyncMode.Interval,
+        syncIntervalUs: 1000000,
+      });
+      const cf = db.getColumnFamily("sync_wal_interval_cf");
+
+      const txn = db.beginTransaction();
+      txn.put(cf, Buffer.from("iwal_key"), Buffer.from("iwal_value"), -1);
+      txn.commit();
+      txn.free();
+
+      expect(() => cf.syncWal()).not.toThrow();
+    });
+
+    test("data readable after syncWal", () => {
+      db.createColumnFamily("sync_wal_read_cf", {
+        syncMode: SyncMode.None,
+      });
+      const cf = db.getColumnFamily("sync_wal_read_cf");
+
+      const txn = db.beginTransaction();
+      txn.put(cf, Buffer.from("sync_key"), Buffer.from("sync_value"), -1);
+      txn.commit();
+      txn.free();
+
+      cf.syncWal();
+
+      const readTxn = db.beginTransaction();
+      const value = readTxn.get(cf, Buffer.from("sync_key"));
+      expect(value.toString()).toBe("sync_value");
+      readTxn.free();
+    });
+  });
+
+  describe("Database-Level Statistics", () => {
+    test("getDbStats returns valid stats", () => {
+      const stats = db.getDbStats();
+
+      expect(typeof stats.numColumnFamilies).toBe("number");
+      expect(typeof stats.totalMemory).toBe("number");
+      expect(typeof stats.availableMemory).toBe("number");
+      expect(typeof stats.resolvedMemoryLimit).toBe("number");
+      expect(typeof stats.memoryPressureLevel).toBe("number");
+      expect(typeof stats.flushPendingCount).toBe("number");
+      expect(typeof stats.totalMemtableBytes).toBe("number");
+      expect(typeof stats.totalImmutableCount).toBe("number");
+      expect(typeof stats.totalSstableCount).toBe("number");
+      expect(typeof stats.totalDataSizeBytes).toBe("number");
+      expect(typeof stats.numOpenSstables).toBe("number");
+      expect(typeof stats.globalSeq).toBe("number");
+      expect(typeof stats.txnMemoryBytes).toBe("number");
+      expect(typeof stats.compactionQueueSize).toBe("number");
+      expect(typeof stats.flushQueueSize).toBe("number");
+    });
+
+    test("getDbStats reflects column family count", () => {
+      const statsBefore = db.getDbStats();
+
+      db.createColumnFamily("dbstats_cf1");
+      db.createColumnFamily("dbstats_cf2");
+
+      const statsAfter = db.getDbStats();
+      expect(statsAfter.numColumnFamilies).toBe(
+        statsBefore.numColumnFamilies + 2,
+      );
+    });
+
+    test("getDbStats totalMemory is positive", () => {
+      const stats = db.getDbStats();
+      expect(stats.totalMemory).toBeGreaterThan(0);
+    });
+
+    test("getDbStats resolvedMemoryLimit is positive", () => {
+      const stats = db.getDbStats();
+      expect(stats.resolvedMemoryLimit).toBeGreaterThan(0);
+    });
+
+    test("getDbStats memoryPressureLevel is within range", () => {
+      const stats = db.getDbStats();
+      expect(stats.memoryPressureLevel).toBeGreaterThanOrEqual(0);
+      expect(stats.memoryPressureLevel).toBeLessThanOrEqual(3);
+    });
+  });
+
   describe("Commit Hook (Change Data Capture)", () => {
     test("commit hook fires on put", () => {
       db.createColumnFamily("hook_cf");

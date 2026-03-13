@@ -99,6 +99,7 @@ export {
   Config,
   ColumnFamilyConfig,
   Stats,
+  DbStats,
   CacheStats,
   CommitOp,
   CommitHookCallback,

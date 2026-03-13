@@ -27,6 +27,7 @@ import {
   tidesdb_cf_update_runtime_config,
   tidesdb_range_cost,
   tidesdb_cf_set_commit_hook,
+  tidesdb_sync_wal,
   CommitOpStruct,
   commitHookPtrType,
   StatsStruct,
@@ -390,6 +391,15 @@ export class ColumnFamily {
       koffi.unregister(this._commitHookCb as never);
       this._commitHookCb = null;
     }
+  }
+
+  /**
+   * Force an immediate fsync of the active write-ahead log for this column family.
+   * Useful for explicit durability control when using SyncMode.None or SyncMode.Interval.
+   */
+  syncWal(): void {
+    const result = tidesdb_sync_wal(this._cf);
+    checkResult(result, "failed to sync WAL");
   }
 
   rangeCost(keyA: Buffer, keyB: Buffer): number {
