@@ -98,6 +98,25 @@ export const ColumnFamilyConfigStruct = koffi.struct(
   },
 );
 
+// tidesdb_db_stats_t structure
+export const DbStatsStruct = koffi.struct("tidesdb_db_stats_t", {
+  num_column_families: "int",
+  total_memory: "uint64_t",
+  available_memory: "uint64_t",
+  resolved_memory_limit: "size_t",
+  memory_pressure_level: "int",
+  flush_pending_count: "int",
+  total_memtable_bytes: "int64_t",
+  total_immutable_count: "int",
+  total_sstable_count: "int",
+  total_data_size_bytes: "uint64_t",
+  num_open_sstables: "int",
+  global_seq: "uint64_t",
+  txn_memory_bytes: "int64_t",
+  compaction_queue_size: "size_t",
+  flush_queue_size: "size_t",
+});
+
 // tidesdb_cache_stats_t structure
 export const CacheStatsStruct = koffi.struct("tidesdb_cache_stats_t", {
   enabled: "int",
@@ -317,6 +336,16 @@ export const tidesdb_cf_set_commit_hook = lib.func(
 // Range cost estimation
 export const tidesdb_range_cost = lib.func(
   "int tidesdb_range_cost(tidesdb_column_family_t *cf, const uint8_t *key_a, size_t key_a_size, const uint8_t *key_b, size_t key_b_size, _Out_ double *cost)",
+);
+
+// WAL sync
+export const tidesdb_sync_wal = lib.func(
+  "int tidesdb_sync_wal(tidesdb_column_family_t *cf)",
+);
+
+// Database-level statistics
+export const tidesdb_get_db_stats = lib.func(
+  "int tidesdb_get_db_stats(tidesdb_t *db, _Out_ tidesdb_db_stats_t *stats)",
 );
 
 // Memory management

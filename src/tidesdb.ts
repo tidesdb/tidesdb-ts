@@ -34,6 +34,7 @@ import {
   tidesdb_backup,
   tidesdb_checkpoint,
   tidesdb_purge,
+  tidesdb_get_db_stats,
 } from "./ffi";
 import { checkResult, TidesDBError } from "./error";
 import { ColumnFamily } from "./column-family";
@@ -42,6 +43,7 @@ import {
   Config,
   ColumnFamilyConfig,
   CacheStats,
+  DbStats,
   LogLevel,
   IsolationLevel,
   CompressionAlgorithm,
@@ -396,6 +398,53 @@ export class TidesDB {
 
     const result = tidesdb_purge(this._db);
     checkResult(result, "failed to purge database");
+  }
+
+  /**
+   * Get aggregate statistics across the entire database instance.
+   * The returned struct is stack-allocated; no free is needed.
+   */
+  getDbStats(): DbStats {
+    if (!this._db) throw new Error("Database has been closed");
+
+    const cStats = {
+      num_column_families: 0,
+      total_memory: 0,
+      available_memory: 0,
+      resolved_memory_limit: 0,
+      memory_pressure_level: 0,
+      flush_pending_count: 0,
+      total_memtable_bytes: 0,
+      total_immutable_count: 0,
+      total_sstable_count: 0,
+      total_data_size_bytes: 0,
+      num_open_sstables: 0,
+      global_seq: 0,
+      txn_memory_bytes: 0,
+      compaction_queue_size: 0,
+      flush_queue_size: 0,
+    };
+
+    const result = tidesdb_get_db_stats(this._db, cStats);
+    checkResult(result, "failed to get database stats");
+
+    return {
+      numColumnFamilies: cStats.num_column_families as number,
+      totalMemory: cStats.total_memory as number,
+      availableMemory: cStats.available_memory as number,
+      resolvedMemoryLimit: cStats.resolved_memory_limit as number,
+      memoryPressureLevel: cStats.memory_pressure_level as number,
+      flushPendingCount: cStats.flush_pending_count as number,
+      totalMemtableBytes: cStats.total_memtable_bytes as number,
+      totalImmutableCount: cStats.total_immutable_count as number,
+      totalSstableCount: cStats.total_sstable_count as number,
+      totalDataSizeBytes: cStats.total_data_size_bytes as number,
+      numOpenSstables: cStats.num_open_sstables as number,
+      globalSeq: cStats.global_seq as number,
+      txnMemoryBytes: cStats.txn_memory_bytes as number,
+      compactionQueueSize: cStats.compaction_queue_size as number,
+      flushQueueSize: cStats.flush_queue_size as number,
+    };
   }
 
   /**

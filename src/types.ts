@@ -188,6 +188,42 @@ export interface Stats {
 }
 
 /**
+ * Database-level aggregate statistics.
+ */
+export interface DbStats {
+  /** Number of column families. */
+  numColumnFamilies: number;
+  /** System total memory in bytes. */
+  totalMemory: number;
+  /** System available memory at open time in bytes. */
+  availableMemory: number;
+  /** Resolved memory limit (auto or configured) in bytes. */
+  resolvedMemoryLimit: number;
+  /** Current memory pressure level (0=normal, 1=elevated, 2=high, 3=critical). */
+  memoryPressureLevel: number;
+  /** Number of pending flush operations (queued + in-flight). */
+  flushPendingCount: number;
+  /** Total bytes in active memtables across all CFs. */
+  totalMemtableBytes: number;
+  /** Total immutable memtables across all CFs. */
+  totalImmutableCount: number;
+  /** Total SSTables across all CFs and levels. */
+  totalSstableCount: number;
+  /** Total data size (klog + vlog) across all CFs in bytes. */
+  totalDataSizeBytes: number;
+  /** Number of currently open SSTable file handles. */
+  numOpenSstables: number;
+  /** Current global sequence number. */
+  globalSeq: number;
+  /** Bytes held by in-flight transactions. */
+  txnMemoryBytes: number;
+  /** Number of pending compaction tasks. */
+  compactionQueueSize: number;
+  /** Number of pending flush tasks in queue. */
+  flushQueueSize: number;
+}
+
+/**
  * Statistics for the block cache.
  */
 export interface CacheStats {
