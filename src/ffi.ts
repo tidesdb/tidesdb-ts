@@ -40,9 +40,17 @@ export const TidesDBConfigStruct = koffi.struct("tidesdb_config_t", {
   log_level: "int",
   block_cache_size: "size_t",
   max_open_sstables: "size_t",
-  max_memory_usage: "size_t",
   log_to_file: "int",
   log_truncation_at: "size_t",
+  max_memory_usage: "size_t",
+  unified_memtable: "int",
+  unified_memtable_write_buffer_size: "size_t",
+  unified_memtable_skip_list_max_level: "int",
+  unified_memtable_skip_list_probability: "float",
+  unified_memtable_sync_mode: "int",
+  unified_memtable_sync_interval_us: "uint64_t",
+  object_store: "void *",
+  object_store_config: "void *",
 });
 
 // tidesdb_commit_op_t structure (used by commit hook callback)
@@ -95,6 +103,9 @@ export const ColumnFamilyConfigStruct = koffi.struct(
     use_btree: "int",
     commit_hook_fn: "void *",
     commit_hook_ctx: "void *",
+    object_target_file_size: "size_t",
+    object_lazy_compaction: "int",
+    object_prefetch_compaction: "int",
   },
 );
 
@@ -115,6 +126,22 @@ export const DbStatsStruct = koffi.struct("tidesdb_db_stats_t", {
   txn_memory_bytes: "int64_t",
   compaction_queue_size: "size_t",
   flush_queue_size: "size_t",
+  unified_memtable_enabled: "int",
+  unified_memtable_bytes: "int64_t",
+  unified_immutable_count: "int",
+  unified_is_flushing: "int",
+  unified_next_cf_index: "uint32_t",
+  unified_wal_generation: "uint64_t",
+  object_store_enabled: "int",
+  object_store_connector: "const char *",
+  local_cache_bytes_used: "size_t",
+  local_cache_bytes_max: "size_t",
+  local_cache_num_files: "int",
+  last_uploaded_generation: "uint64_t",
+  upload_queue_depth: "size_t",
+  total_uploads: "uint64_t",
+  total_upload_failures: "uint64_t",
+  replica_mode: "int",
 });
 
 // tidesdb_cache_stats_t structure
@@ -240,6 +267,9 @@ export const tidesdb_txn_release_savepoint = lib.func(
 );
 
 // Iterator operations
+export const tidesdb_iter_key_value = lib.func(
+  "int tidesdb_iter_key_value(tidesdb_iter_t *iter, _Out_ uint8_t **key, _Out_ size_t *key_size, _Out_ uint8_t **value, _Out_ size_t *value_size)",
+);
 export const tidesdb_iter_new = lib.func(
   "int tidesdb_iter_new(tidesdb_txn_t *txn, tidesdb_column_family_t *cf, _Out_ tidesdb_iter_t **iter)",
 );
@@ -346,6 +376,16 @@ export const tidesdb_sync_wal = lib.func(
 // Database-level statistics
 export const tidesdb_get_db_stats = lib.func(
   "int tidesdb_get_db_stats(tidesdb_t *db, _Out_ tidesdb_db_stats_t *stats)",
+);
+
+// Delete column family by handle
+export const tidesdb_delete_column_family = lib.func(
+  "int tidesdb_delete_column_family(tidesdb_t *db, tidesdb_column_family_t *cf)",
+);
+
+// Promote replica to primary
+export const tidesdb_promote_to_primary = lib.func(
+  "int tidesdb_promote_to_primary(tidesdb_t *db)",
 );
 
 // Memory management

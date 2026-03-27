@@ -26,6 +26,7 @@ import {
   tidesdb_iter_prev,
   tidesdb_iter_key,
   tidesdb_iter_value,
+  tidesdb_iter_key_value,
   tidesdb_iter_free,
 } from './ffi';
 import { checkResult } from './error';
@@ -150,6 +151,42 @@ export class Iterator {
 
     // Decode the pointer to a buffer
     return Buffer.from(koffi.decode(valuePtrOut[0], 'uint8_t', valueSize) as number[]);
+  }
+
+  /**
+   * Get the current key and value in a single call.
+   * More efficient than calling key() and value() separately.
+   * @returns Object with key and value Buffers.
+   */
+  keyValue(): { key: Buffer; value: Buffer } {
+    if (!this._iter) throw new Error('Iterator has been freed');
+
+    const keyPtrOut: unknown[] = [null];
+    const keySizeOut: number[] = [0];
+    const valuePtrOut: unknown[] = [null];
+    const valueSizeOut: number[] = [0];
+
+    const result = tidesdb_iter_key_value(
+      this._iter,
+      keyPtrOut,
+      keySizeOut,
+      valuePtrOut,
+      valueSizeOut,
+    );
+    checkResult(result, 'failed to get key-value');
+
+    const keySize = keySizeOut[0];
+    const valueSize = valueSizeOut[0];
+
+    const key = keySize > 0
+      ? Buffer.from(koffi.decode(keyPtrOut[0], 'uint8_t', keySize) as number[])
+      : Buffer.alloc(0);
+
+    const value = valueSize > 0
+      ? Buffer.from(koffi.decode(valuePtrOut[0], 'uint8_t', valueSize) as number[])
+      : Buffer.alloc(0);
+
+    return { key, value };
   }
 
   /**
