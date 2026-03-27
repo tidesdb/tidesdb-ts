@@ -37,6 +37,8 @@ import {
   tidesdb_get_db_stats,
   tidesdb_delete_column_family,
   tidesdb_promote_to_primary,
+  tidesdb_objstore_default_config,
+  tidesdb_objstore_fs_create,
 } from "./ffi";
 import { checkResult, TidesDBError } from "./error";
 import { ColumnFamily } from "./column-family";
@@ -44,6 +46,7 @@ import { Transaction } from "./transaction";
 import {
   Config,
   ColumnFamilyConfig,
+  ObjectStoreConfig,
   CacheStats,
   DbStats,
   LogLevel,
@@ -111,6 +114,31 @@ export function defaultColumnFamilyConfig(): ColumnFamilyConfig {
 }
 
 /**
+ * Default object store configuration.
+ */
+export function defaultObjectStoreConfig(): ObjectStoreConfig {
+  const cConfig = tidesdb_objstore_default_config();
+  return {
+    localCachePath: null,
+    localCacheMaxBytes: cConfig.local_cache_max_bytes as number,
+    cacheOnRead: cConfig.cache_on_read !== 0,
+    cacheOnWrite: cConfig.cache_on_write !== 0,
+    maxConcurrentUploads: cConfig.max_concurrent_uploads as number,
+    maxConcurrentDownloads: cConfig.max_concurrent_downloads as number,
+    multipartThreshold: cConfig.multipart_threshold as number,
+    multipartPartSize: cConfig.multipart_part_size as number,
+    syncManifestToObject: cConfig.sync_manifest_to_object !== 0,
+    replicateWal: cConfig.replicate_wal !== 0,
+    walUploadSync: cConfig.wal_upload_sync !== 0,
+    walSyncThresholdBytes: cConfig.wal_sync_threshold_bytes as number,
+    walSyncOnCommit: cConfig.wal_sync_on_commit !== 0,
+    replicaMode: cConfig.replica_mode !== 0,
+    replicaSyncIntervalUs: cConfig.replica_sync_interval_us as number,
+    replicaReplayWal: cConfig.replica_replay_wal !== 0,
+  };
+}
+
+/**
  * TidesDB database instance.
  */
 export class TidesDB {
@@ -126,6 +154,39 @@ export class TidesDB {
   static open(config: Config): TidesDB {
     const defaults = defaultConfig();
     const mergedConfig = { ...defaults, ...config };
+
+    // Create object store connector and config if requested
+    let objStorePtr: unknown = null;
+    let objStoreCfg: Record<string, unknown> | null = null;
+
+    if (mergedConfig.objectStoreFsPath) {
+      objStorePtr = tidesdb_objstore_fs_create(mergedConfig.objectStoreFsPath);
+      if (!objStorePtr) {
+        throw new Error("failed to create filesystem object store connector");
+      }
+
+      const osDefaults = defaultObjectStoreConfig();
+      const osConfig = { ...osDefaults, ...mergedConfig.objectStoreConfig };
+
+      objStoreCfg = {
+        local_cache_path: osConfig.localCachePath ?? null,
+        local_cache_max_bytes: osConfig.localCacheMaxBytes ?? 0,
+        cache_on_read: osConfig.cacheOnRead === false ? 0 : 1,
+        cache_on_write: osConfig.cacheOnWrite === false ? 0 : 1,
+        max_concurrent_uploads: osConfig.maxConcurrentUploads ?? 4,
+        max_concurrent_downloads: osConfig.maxConcurrentDownloads ?? 8,
+        multipart_threshold: osConfig.multipartThreshold ?? 67108864,
+        multipart_part_size: osConfig.multipartPartSize ?? 8388608,
+        sync_manifest_to_object: osConfig.syncManifestToObject === false ? 0 : 1,
+        replicate_wal: osConfig.replicateWal === false ? 0 : 1,
+        wal_upload_sync: osConfig.walUploadSync ? 1 : 0,
+        wal_sync_threshold_bytes: osConfig.walSyncThresholdBytes ?? 1048576,
+        wal_sync_on_commit: osConfig.walSyncOnCommit ? 1 : 0,
+        replica_mode: osConfig.replicaMode ? 1 : 0,
+        replica_sync_interval_us: osConfig.replicaSyncIntervalUs ?? 5000000,
+        replica_replay_wal: osConfig.replicaReplayWal === false ? 0 : 1,
+      };
+    }
 
     const cConfig = {
       db_path: mergedConfig.dbPath,
@@ -143,8 +204,8 @@ export class TidesDB {
       unified_memtable_skip_list_probability: mergedConfig.unifiedMemtableSkipListProbability!,
       unified_memtable_sync_mode: mergedConfig.unifiedMemtableSyncMode!,
       unified_memtable_sync_interval_us: mergedConfig.unifiedMemtableSyncIntervalUs!,
-      object_store: null,
-      object_store_config: null,
+      object_store: objStorePtr,
+      object_store_config: objStoreCfg,
     };
 
     const dbPtrOut: unknown[] = [null];

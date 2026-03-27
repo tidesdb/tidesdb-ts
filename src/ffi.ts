@@ -22,6 +22,7 @@ const tidesdb_t = koffi.opaque("tidesdb_t");
 const tidesdb_column_family_t = koffi.opaque("tidesdb_column_family_t");
 const tidesdb_txn_t = koffi.opaque("tidesdb_txn_t");
 const tidesdb_iter_t = koffi.opaque("tidesdb_iter_t");
+const tidesdb_objstore_t = koffi.opaque("tidesdb_objstore_t");
 
 // Pointer types
 export const tidesdbPtr = koffi.pointer(tidesdb_t);
@@ -31,6 +32,27 @@ export const txnPtr = koffi.pointer(tidesdb_txn_t);
 export const txnPtrPtr = koffi.pointer(txnPtr);
 export const iterPtr = koffi.pointer(tidesdb_iter_t);
 export const iterPtrPtr = koffi.pointer(iterPtr);
+export const objstorePtr = koffi.pointer(tidesdb_objstore_t);
+
+// tidesdb_objstore_config_t structure
+export const ObjStoreConfigStruct = koffi.struct("tidesdb_objstore_config_t", {
+  local_cache_path: "const char *",
+  local_cache_max_bytes: "size_t",
+  cache_on_read: "int",
+  cache_on_write: "int",
+  max_concurrent_uploads: "int",
+  max_concurrent_downloads: "int",
+  multipart_threshold: "size_t",
+  multipart_part_size: "size_t",
+  sync_manifest_to_object: "int",
+  replicate_wal: "int",
+  wal_upload_sync: "int",
+  wal_sync_threshold_bytes: "size_t",
+  wal_sync_on_commit: "int",
+  replica_mode: "int",
+  replica_sync_interval_us: "uint64_t",
+  replica_replay_wal: "int",
+});
 
 // tidesdb_config_t structure
 export const TidesDBConfigStruct = koffi.struct("tidesdb_config_t", {
@@ -386,6 +408,14 @@ export const tidesdb_delete_column_family = lib.func(
 // Promote replica to primary
 export const tidesdb_promote_to_primary = lib.func(
   "int tidesdb_promote_to_primary(tidesdb_t *db)",
+);
+
+// Object store operations
+export const tidesdb_objstore_default_config = lib.func(
+  "tidesdb_objstore_config_t tidesdb_objstore_default_config()",
+);
+export const tidesdb_objstore_fs_create = lib.func(
+  "tidesdb_objstore_t *tidesdb_objstore_fs_create(const char *root_dir)",
 );
 
 // Memory management

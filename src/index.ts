@@ -85,7 +85,7 @@
  */
 
 // Re-export all public types and classes
-export { TidesDB, defaultConfig, defaultColumnFamilyConfig } from './tidesdb';
+export { TidesDB, defaultConfig, defaultColumnFamilyConfig, defaultObjectStoreConfig } from './tidesdb';
 export { ColumnFamily } from './column-family';
 export { Transaction } from './transaction';
 export { Iterator } from './iterator';
@@ -98,6 +98,7 @@ export {
   ErrorCode,
   Config,
   ColumnFamilyConfig,
+  ObjectStoreConfig,
   Stats,
   DbStats,
   CacheStats,
