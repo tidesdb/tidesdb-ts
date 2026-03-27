@@ -58,6 +58,8 @@ export class TidesDBError extends Error {
         return 'invalid database handle';
       case ErrorCode.ErrLocked:
         return 'database is locked';
+      case ErrorCode.ErrReadonly:
+        return 'database is read-only';
       default:
         return 'unknown error';
     }

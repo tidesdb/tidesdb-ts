@@ -1109,4 +1109,196 @@ describe("TidesDB", () => {
       cf.clearCommitHook();
     });
   });
+
+  describe("Delete Column Family by Handle", () => {
+    test("deleteColumnFamily removes the column family", () => {
+      db.createColumnFamily("del_cf");
+      const cf = db.getColumnFamily("del_cf");
+
+      // Insert some data
+      const txn = db.beginTransaction();
+      txn.put(cf, Buffer.from("dk1"), Buffer.from("dv1"), -1);
+      txn.commit();
+      txn.free();
+
+      // Delete by handle
+      db.deleteColumnFamily(cf);
+
+      // Column family should no longer be accessible
+      expect(() => db.getColumnFamily("del_cf")).toThrow();
+    });
+  });
+
+  describe("Iterator keyValue", () => {
+    test("keyValue returns both key and value", () => {
+      db.createColumnFamily("kv_iter_cf");
+      const cf = db.getColumnFamily("kv_iter_cf");
+
+      const txn = db.beginTransaction();
+      txn.put(cf, Buffer.from("kv_key1"), Buffer.from("kv_val1"), -1);
+      txn.put(cf, Buffer.from("kv_key2"), Buffer.from("kv_val2"), -1);
+      txn.commit();
+      txn.free();
+
+      const readTxn = db.beginTransaction();
+      const iter = readTxn.newIterator(cf);
+      iter.seekToFirst();
+
+      const results: { key: string; value: string }[] = [];
+      while (iter.isValid()) {
+        const { key, value } = iter.keyValue();
+        results.push({ key: key.toString(), value: value.toString() });
+        iter.next();
+      }
+
+      iter.free();
+      readTxn.free();
+
+      expect(results.length).toBe(2);
+      expect(results[0].key).toBe("kv_key1");
+      expect(results[0].value).toBe("kv_val1");
+      expect(results[1].key).toBe("kv_key2");
+      expect(results[1].value).toBe("kv_val2");
+    });
+
+    test("keyValue matches separate key() and value() calls", () => {
+      db.createColumnFamily("kv_match_cf");
+      const cf = db.getColumnFamily("kv_match_cf");
+
+      const txn = db.beginTransaction();
+      for (let i = 0; i < 5; i++) {
+        txn.put(
+          cf,
+          Buffer.from(`match_key${i}`),
+          Buffer.from(`match_val${i}`),
+          -1,
+        );
+      }
+      txn.commit();
+      txn.free();
+
+      const readTxn = db.beginTransaction();
+      const iter = readTxn.newIterator(cf);
+      iter.seekToFirst();
+
+      while (iter.isValid()) {
+        const separateKey = iter.key().toString();
+        const separateValue = iter.value().toString();
+        const { key, value } = iter.keyValue();
+        expect(key.toString()).toBe(separateKey);
+        expect(value.toString()).toBe(separateValue);
+        iter.next();
+      }
+
+      iter.free();
+      readTxn.free();
+    });
+  });
+
+  describe("Unified Memtable Config", () => {
+    test("open database with unified memtable", () => {
+      const unifiedDir = createTempDir();
+      try {
+        const unifiedDb = TidesDB.open({
+          dbPath: unifiedDir,
+          numFlushThreads: 2,
+          numCompactionThreads: 2,
+          unifiedMemtable: true,
+          unifiedMemtableWriteBufferSize: 64 * 1024 * 1024,
+        });
+
+        unifiedDb.createColumnFamily("unified_cf");
+        const cf = unifiedDb.getColumnFamily("unified_cf");
+
+        const txn = unifiedDb.beginTransaction();
+        txn.put(cf, Buffer.from("ukey1"), Buffer.from("uval1"), -1);
+        txn.commit();
+        txn.free();
+
+        const readTxn = unifiedDb.beginTransaction();
+        const value = readTxn.get(cf, Buffer.from("ukey1"));
+        expect(value.toString()).toBe("uval1");
+        readTxn.free();
+
+        unifiedDb.close();
+      } finally {
+        removeTempDir(unifiedDir);
+      }
+    });
+  });
+
+  describe("DbStats Unified Fields", () => {
+    test("getDbStats includes unified memtable fields", () => {
+      const stats = db.getDbStats();
+      expect(typeof stats.unifiedMemtableEnabled).toBe("boolean");
+      expect(typeof stats.unifiedMemtableBytes).toBe("number");
+      expect(typeof stats.unifiedImmutableCount).toBe("number");
+      expect(typeof stats.unifiedIsFlushing).toBe("boolean");
+      expect(typeof stats.unifiedNextCfIndex).toBe("number");
+      expect(typeof stats.unifiedWalGeneration).toBe("number");
+    });
+
+    test("getDbStats includes object store fields", () => {
+      const stats = db.getDbStats();
+      expect(typeof stats.objectStoreEnabled).toBe("boolean");
+      expect(typeof stats.objectStoreConnector).toBe("string");
+      expect(typeof stats.localCacheBytesUsed).toBe("number");
+      expect(typeof stats.localCacheBytesMax).toBe("number");
+      expect(typeof stats.localCacheNumFiles).toBe("number");
+      expect(typeof stats.lastUploadedGeneration).toBe("number");
+      expect(typeof stats.uploadQueueDepth).toBe("number");
+      expect(typeof stats.totalUploads).toBe("number");
+      expect(typeof stats.totalUploadFailures).toBe("number");
+      expect(typeof stats.replicaMode).toBe("boolean");
+    });
+
+    test("unified memtable enabled shows in stats", () => {
+      const unifiedDir = createTempDir();
+      try {
+        const unifiedDb = TidesDB.open({
+          dbPath: unifiedDir,
+          numFlushThreads: 1,
+          numCompactionThreads: 1,
+          unifiedMemtable: true,
+        });
+
+        const stats = unifiedDb.getDbStats();
+        expect(stats.unifiedMemtableEnabled).toBe(true);
+
+        unifiedDb.close();
+      } finally {
+        removeTempDir(unifiedDir);
+      }
+    });
+  });
+
+  describe("ErrReadonly Error Code", () => {
+    test("ErrReadonly is defined", () => {
+      const { ErrorCode } = require("./types");
+      expect(ErrorCode.ErrReadonly).toBe(-13);
+    });
+  });
+
+  describe("Rename Column Family", () => {
+    test("rename column family and access with new name", () => {
+      db.createColumnFamily("rename_src_cf");
+      const cf = db.getColumnFamily("rename_src_cf");
+
+      const txn = db.beginTransaction();
+      txn.put(cf, Buffer.from("rk1"), Buffer.from("rv1"), -1);
+      txn.commit();
+      txn.free();
+
+      db.renameColumnFamily("rename_src_cf", "rename_dst_cf");
+
+      // Old name should be gone
+      expect(() => db.getColumnFamily("rename_src_cf")).toThrow();
+
+      // New name should have the data
+      const renamedCf = db.getColumnFamily("rename_dst_cf");
+      const readTxn = db.beginTransaction();
+      expect(readTxn.get(renamedCf, Buffer.from("rk1")).toString()).toBe("rv1");
+      readTxn.free();
+    });
+  });
 });

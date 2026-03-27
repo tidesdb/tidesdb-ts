@@ -35,6 +35,8 @@ import {
   tidesdb_checkpoint,
   tidesdb_purge,
   tidesdb_get_db_stats,
+  tidesdb_delete_column_family,
+  tidesdb_promote_to_primary,
 } from "./ffi";
 import { checkResult, TidesDBError } from "./error";
 import { ColumnFamily } from "./column-family";
@@ -67,6 +69,12 @@ export function defaultConfig(): Partial<Config> {
     maxMemoryUsage: 0,
     logToFile: false,
     logTruncationAt: 24 * 1024 * 1024,
+    unifiedMemtable: false,
+    unifiedMemtableWriteBufferSize: 0,
+    unifiedMemtableSkipListMaxLevel: 0,
+    unifiedMemtableSkipListProbability: 0,
+    unifiedMemtableSyncMode: SyncMode.None,
+    unifiedMemtableSyncIntervalUs: 0,
   };
 }
 
@@ -96,6 +104,9 @@ export function defaultColumnFamilyConfig(): ColumnFamilyConfig {
     l1FileCountTrigger: cConfig.l1_file_count_trigger as number,
     l0QueueStallThreshold: cConfig.l0_queue_stall_threshold as number,
     useBtree: cConfig.use_btree !== 0,
+    objectTargetFileSize: cConfig.object_target_file_size as number,
+    objectLazyCompaction: cConfig.object_lazy_compaction !== 0,
+    objectPrefetchCompaction: cConfig.object_prefetch_compaction !== 0,
   };
 }
 
@@ -123,9 +134,17 @@ export class TidesDB {
       log_level: mergedConfig.logLevel!,
       block_cache_size: mergedConfig.blockCacheSize!,
       max_open_sstables: mergedConfig.maxOpenSSTables!,
-      max_memory_usage: mergedConfig.maxMemoryUsage!,
       log_to_file: mergedConfig.logToFile ? 1 : 0,
       log_truncation_at: mergedConfig.logTruncationAt!,
+      max_memory_usage: mergedConfig.maxMemoryUsage!,
+      unified_memtable: mergedConfig.unifiedMemtable ? 1 : 0,
+      unified_memtable_write_buffer_size: mergedConfig.unifiedMemtableWriteBufferSize!,
+      unified_memtable_skip_list_max_level: mergedConfig.unifiedMemtableSkipListMaxLevel!,
+      unified_memtable_skip_list_probability: mergedConfig.unifiedMemtableSkipListProbability!,
+      unified_memtable_sync_mode: mergedConfig.unifiedMemtableSyncMode!,
+      unified_memtable_sync_interval_us: mergedConfig.unifiedMemtableSyncIntervalUs!,
+      object_store: null,
+      object_store_config: null,
     };
 
     const dbPtrOut: unknown[] = [null];
@@ -201,6 +220,9 @@ export class TidesDB {
       use_btree: mergedConfig.useBtree ? 1 : 0,
       commit_hook_fn: null,
       commit_hook_ctx: null,
+      object_target_file_size: mergedConfig.objectTargetFileSize ?? 0,
+      object_lazy_compaction: mergedConfig.objectLazyCompaction ? 1 : 0,
+      object_prefetch_compaction: mergedConfig.objectPrefetchCompaction === false ? 0 : 1,
     };
 
     const result = tidesdb_create_column_family(this._db, name, cConfig);
@@ -215,6 +237,17 @@ export class TidesDB {
 
     const result = tidesdb_drop_column_family(this._db, name);
     checkResult(result, "failed to drop column family");
+  }
+
+  /**
+   * Delete a column family by handle.
+   * @param cf Column family handle to delete.
+   */
+  deleteColumnFamily(cf: ColumnFamily): void {
+    if (!this._db) throw new Error("Database has been closed");
+
+    const result = tidesdb_delete_column_family(this._db, cf.ptr);
+    checkResult(result, "failed to delete column family");
   }
 
   /**
@@ -401,6 +434,17 @@ export class TidesDB {
   }
 
   /**
+   * Promote a read-only replica to primary mode.
+   * Only valid when the database was opened in replica mode.
+   */
+  promoteToPrimary(): void {
+    if (!this._db) throw new Error("Database has been closed");
+
+    const result = tidesdb_promote_to_primary(this._db);
+    checkResult(result, "failed to promote to primary");
+  }
+
+  /**
    * Get aggregate statistics across the entire database instance.
    * The returned struct is stack-allocated; no free is needed.
    */
@@ -423,10 +467,36 @@ export class TidesDB {
       txn_memory_bytes: 0,
       compaction_queue_size: 0,
       flush_queue_size: 0,
+      unified_memtable_enabled: 0,
+      unified_memtable_bytes: 0,
+      unified_immutable_count: 0,
+      unified_is_flushing: 0,
+      unified_next_cf_index: 0,
+      unified_wal_generation: 0,
+      object_store_enabled: 0,
+      object_store_connector: null as unknown,
+      local_cache_bytes_used: 0,
+      local_cache_bytes_max: 0,
+      local_cache_num_files: 0,
+      last_uploaded_generation: 0,
+      upload_queue_depth: 0,
+      total_uploads: 0,
+      total_upload_failures: 0,
+      replica_mode: 0,
     };
 
     const result = tidesdb_get_db_stats(this._db, cStats);
     checkResult(result, "failed to get database stats");
+
+    // Decode connector string if present
+    let connectorStr = "";
+    if (cStats.object_store_connector) {
+      try {
+        connectorStr = koffi.decode(cStats.object_store_connector, "char", 64) as string;
+      } catch {
+        connectorStr = "";
+      }
+    }
 
     return {
       numColumnFamilies: cStats.num_column_families as number,
@@ -444,6 +514,22 @@ export class TidesDB {
       txnMemoryBytes: cStats.txn_memory_bytes as number,
       compactionQueueSize: cStats.compaction_queue_size as number,
       flushQueueSize: cStats.flush_queue_size as number,
+      unifiedMemtableEnabled: cStats.unified_memtable_enabled !== 0,
+      unifiedMemtableBytes: cStats.unified_memtable_bytes as number,
+      unifiedImmutableCount: cStats.unified_immutable_count as number,
+      unifiedIsFlushing: cStats.unified_is_flushing !== 0,
+      unifiedNextCfIndex: cStats.unified_next_cf_index as number,
+      unifiedWalGeneration: cStats.unified_wal_generation as number,
+      objectStoreEnabled: cStats.object_store_enabled !== 0,
+      objectStoreConnector: connectorStr,
+      localCacheBytesUsed: cStats.local_cache_bytes_used as number,
+      localCacheBytesMax: cStats.local_cache_bytes_max as number,
+      localCacheNumFiles: cStats.local_cache_num_files as number,
+      lastUploadedGeneration: cStats.last_uploaded_generation as number,
+      uploadQueueDepth: cStats.upload_queue_depth as number,
+      totalUploads: cStats.total_uploads as number,
+      totalUploadFailures: cStats.total_upload_failures as number,
+      replicaMode: cStats.replica_mode !== 0,
     };
   }
 

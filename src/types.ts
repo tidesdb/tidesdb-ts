@@ -75,6 +75,7 @@ export enum ErrorCode {
   ErrInvalidDB = -10,
   ErrUnknown = -11,
   ErrLocked = -12,
+  ErrReadonly = -13,
 }
 
 /**
@@ -99,6 +100,18 @@ export interface Config {
   logToFile?: boolean;
   /** Log file truncation size in bytes. Default: 24MB, 0 = no truncation */
   logTruncationAt?: number;
+  /** Enable unified memtable mode. Default: false */
+  unifiedMemtable?: boolean;
+  /** Write buffer size for unified memtable (0 = auto). */
+  unifiedMemtableWriteBufferSize?: number;
+  /** Skip list max level for unified memtable (0 = default 12). */
+  unifiedMemtableSkipListMaxLevel?: number;
+  /** Skip list probability for unified memtable (0 = default 0.25). */
+  unifiedMemtableSkipListProbability?: number;
+  /** Sync mode for unified WAL. Default: SyncMode.None */
+  unifiedMemtableSyncMode?: SyncMode;
+  /** Sync interval for unified WAL in microseconds (0 = default). */
+  unifiedMemtableSyncIntervalUs?: number;
 }
 
 /**
@@ -147,6 +160,12 @@ export interface ColumnFamilyConfig {
   l0QueueStallThreshold?: number;
   /** Use B+tree format for klog (default: false = block-based). */
   useBtree?: boolean;
+  /** Target SSTable size in object store mode (default 256MB, 0=auto). */
+  objectTargetFileSize?: number;
+  /** Compact less aggressively in object store mode (default: false). */
+  objectLazyCompaction?: boolean;
+  /** Download all inputs before merge in object store mode (default: true). */
+  objectPrefetchCompaction?: boolean;
 }
 
 /**
@@ -221,6 +240,38 @@ export interface DbStats {
   compactionQueueSize: number;
   /** Number of pending flush tasks in queue. */
   flushQueueSize: number;
+  /** Whether unified memtable mode is active. */
+  unifiedMemtableEnabled: boolean;
+  /** Bytes in unified active memtable. */
+  unifiedMemtableBytes: number;
+  /** Number of unified immutable memtables. */
+  unifiedImmutableCount: number;
+  /** Whether unified memtable is currently flushing/rotating. */
+  unifiedIsFlushing: boolean;
+  /** Next CF index to be assigned in unified mode. */
+  unifiedNextCfIndex: number;
+  /** Current unified WAL generation counter. */
+  unifiedWalGeneration: number;
+  /** Whether object store mode is active. */
+  objectStoreEnabled: boolean;
+  /** Object store connector name ("s3", "gcs", "fs", etc.). */
+  objectStoreConnector: string;
+  /** Current local file cache usage in bytes. */
+  localCacheBytesUsed: number;
+  /** Configured maximum local cache size in bytes. */
+  localCacheBytesMax: number;
+  /** Number of files tracked in local cache. */
+  localCacheNumFiles: number;
+  /** Highest WAL generation confirmed uploaded. */
+  lastUploadedGeneration: number;
+  /** Number of pending upload jobs in the queue. */
+  uploadQueueDepth: number;
+  /** Lifetime count of objects uploaded to object store. */
+  totalUploads: number;
+  /** Lifetime count of permanently failed uploads. */
+  totalUploadFailures: number;
+  /** Whether running in read-only replica mode. */
+  replicaMode: boolean;
 }
 
 /**
