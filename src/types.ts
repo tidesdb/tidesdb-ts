@@ -79,6 +79,44 @@ export enum ErrorCode {
 }
 
 /**
+ * Configuration for object store mode behavior.
+ */
+export interface ObjectStoreConfig {
+  /** Local directory for cached SSTable files (null = use dbPath). */
+  localCachePath?: string | null;
+  /** Maximum local cache size in bytes (0 = unlimited). */
+  localCacheMaxBytes?: number;
+  /** Cache downloaded files locally. Default: true */
+  cacheOnRead?: boolean;
+  /** Keep local copy after upload. Default: true */
+  cacheOnWrite?: boolean;
+  /** Number of parallel upload threads. Default: 4 */
+  maxConcurrentUploads?: number;
+  /** Number of parallel download threads. Default: 8 */
+  maxConcurrentDownloads?: number;
+  /** Use multipart upload above this size in bytes. Default: 64MB */
+  multipartThreshold?: number;
+  /** Chunk size for multipart uploads in bytes. Default: 8MB */
+  multipartPartSize?: number;
+  /** Upload MANIFEST after each compaction. Default: true */
+  syncManifestToObject?: boolean;
+  /** Upload closed WAL segments for replication. Default: true */
+  replicateWal?: boolean;
+  /** Block flush until WAL is uploaded (true) or upload in background (false). Default: false */
+  walUploadSync?: boolean;
+  /** Sync active WAL to object store when it grows by this many bytes (0 = off). Default: 1MB */
+  walSyncThresholdBytes?: number;
+  /** Upload WAL after every txn commit for RPO=0 replication. Default: false */
+  walSyncOnCommit?: boolean;
+  /** Enable read-only replica mode. Default: false */
+  replicaMode?: boolean;
+  /** MANIFEST poll interval for replica sync in microseconds. Default: 5000000 (5s) */
+  replicaSyncIntervalUs?: number;
+  /** Replay WAL from object store for near-real-time reads on replicas. Default: true */
+  replicaReplayWal?: boolean;
+}
+
+/**
  * Configuration for opening a TidesDB instance.
  */
 export interface Config {
@@ -112,6 +150,10 @@ export interface Config {
   unifiedMemtableSyncMode?: SyncMode;
   /** Sync interval for unified WAL in microseconds (0 = default). */
   unifiedMemtableSyncIntervalUs?: number;
+  /** Filesystem object store root directory. When set, enables object store mode with the FS connector. */
+  objectStoreFsPath?: string;
+  /** Object store behavior configuration (used when objectStoreFsPath is set). */
+  objectStoreConfig?: ObjectStoreConfig;
 }
 
 /**
