@@ -202,8 +202,6 @@ export interface ColumnFamilyConfig {
   l0QueueStallThreshold?: number;
   /** Use B+tree format for klog (default: false = block-based). */
   useBtree?: boolean;
-  /** Target SSTable size in object store mode (default 256MB, 0=auto). */
-  objectTargetFileSize?: number;
   /** Compact less aggressively in object store mode (default: false). */
   objectLazyCompaction?: boolean;
   /** Download all inputs before merge in object store mode (default: true). */
