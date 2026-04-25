@@ -264,6 +264,9 @@ export const tidesdb_txn_get = lib.func(
 export const tidesdb_txn_delete = lib.func(
   "int tidesdb_txn_delete(tidesdb_txn_t *txn, tidesdb_column_family_t *cf, const uint8_t *key, size_t key_size)",
 );
+export const tidesdb_txn_single_delete = lib.func(
+  "int tidesdb_txn_single_delete(tidesdb_txn_t *txn, tidesdb_column_family_t *cf, const uint8_t *key, size_t key_size)",
+);
 export const tidesdb_txn_commit = lib.func(
   "int tidesdb_txn_commit(tidesdb_txn_t *txn)",
 );

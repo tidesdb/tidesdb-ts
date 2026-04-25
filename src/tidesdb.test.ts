@@ -124,6 +124,60 @@ describe("TidesDB", () => {
       readTxn.free();
     });
 
+    test("singleDelete makes prior put unreadable", () => {
+      db.createColumnFamily("sd_cf");
+      const cf = db.getColumnFamily("sd_cf");
+
+      const txn = db.beginTransaction();
+      txn.put(cf, Buffer.from("sd_key"), Buffer.from("sd_value"), -1);
+      txn.commit();
+      txn.free();
+
+      const sdTxn = db.beginTransaction();
+      sdTxn.singleDelete(cf, Buffer.from("sd_key"));
+      sdTxn.commit();
+      sdTxn.free();
+
+      const readTxn = db.beginTransaction();
+      expect(() => readTxn.get(cf, Buffer.from("sd_key"))).toThrow();
+      readTxn.free();
+    });
+
+    test("singleDelete on non-existent key is allowed", () => {
+      db.createColumnFamily("sd_missing_cf");
+      const cf = db.getColumnFamily("sd_missing_cf");
+
+      const txn = db.beginTransaction();
+      expect(() => txn.singleDelete(cf, Buffer.from("missing"))).not.toThrow();
+      txn.commit();
+      txn.free();
+    });
+
+    test("singleDelete works alongside puts in the same transaction", () => {
+      db.createColumnFamily("sd_mixed_cf");
+      const cf = db.getColumnFamily("sd_mixed_cf");
+
+      // Seed two keys
+      const seed = db.beginTransaction();
+      seed.put(cf, Buffer.from("keep"), Buffer.from("keep_v"), -1);
+      seed.put(cf, Buffer.from("drop"), Buffer.from("drop_v"), -1);
+      seed.commit();
+      seed.free();
+
+      // Mixed batch: insert a new key and single-delete an existing one
+      const mix = db.beginTransaction();
+      mix.put(cf, Buffer.from("fresh"), Buffer.from("fresh_v"), -1);
+      mix.singleDelete(cf, Buffer.from("drop"));
+      mix.commit();
+      mix.free();
+
+      const readTxn = db.beginTransaction();
+      expect(readTxn.get(cf, Buffer.from("keep")).toString()).toBe("keep_v");
+      expect(readTxn.get(cf, Buffer.from("fresh")).toString()).toBe("fresh_v");
+      expect(() => readTxn.get(cf, Buffer.from("drop"))).toThrow();
+      readTxn.free();
+    });
+
     test("rollback", () => {
       db.createColumnFamily("test_cf");
       const cf = db.getColumnFamily("test_cf");

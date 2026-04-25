@@ -174,7 +174,6 @@ export class ColumnFamily {
           l1FileCountTrigger: cfgDecoded.l1_file_count_trigger as number,
           l0QueueStallThreshold: cfgDecoded.l0_queue_stall_threshold as number,
           useBtree: (cfgDecoded.use_btree as number) !== 0,
-          objectTargetFileSize: cfgDecoded.object_target_file_size as number,
           objectLazyCompaction: (cfgDecoded.object_lazy_compaction as number) !== 0,
           objectPrefetchCompaction: (cfgDecoded.object_prefetch_compaction as number) !== 0,
         };
@@ -295,7 +294,7 @@ export class ColumnFamily {
       use_btree: config.useBtree ? 1 : 0,
       commit_hook_fn: null,
       commit_hook_ctx: null,
-      object_target_file_size: config.objectTargetFileSize ?? 0,
+      object_target_file_size: 0,
       object_lazy_compaction: config.objectLazyCompaction ? 1 : 0,
       object_prefetch_compaction: config.objectPrefetchCompaction === false ? 0 : 1,
     };

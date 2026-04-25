@@ -107,7 +107,6 @@ export function defaultColumnFamilyConfig(): ColumnFamilyConfig {
     l1FileCountTrigger: cConfig.l1_file_count_trigger as number,
     l0QueueStallThreshold: cConfig.l0_queue_stall_threshold as number,
     useBtree: cConfig.use_btree !== 0,
-    objectTargetFileSize: cConfig.object_target_file_size as number,
     objectLazyCompaction: cConfig.object_lazy_compaction !== 0,
     objectPrefetchCompaction: cConfig.object_prefetch_compaction !== 0,
   };
@@ -281,7 +280,7 @@ export class TidesDB {
       use_btree: mergedConfig.useBtree ? 1 : 0,
       commit_hook_fn: null,
       commit_hook_ctx: null,
-      object_target_file_size: mergedConfig.objectTargetFileSize ?? 0,
+      object_target_file_size: 0,
       object_lazy_compaction: mergedConfig.objectLazyCompaction ? 1 : 0,
       object_prefetch_compaction: mergedConfig.objectPrefetchCompaction === false ? 0 : 1,
     };

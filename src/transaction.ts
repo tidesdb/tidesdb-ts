@@ -20,6 +20,7 @@ import {
   tidesdb_txn_put,
   tidesdb_txn_get,
   tidesdb_txn_delete,
+  tidesdb_txn_single_delete,
   tidesdb_txn_commit,
   tidesdb_txn_rollback,
   tidesdb_txn_reset,
@@ -108,6 +109,30 @@ export class Transaction {
 
     const result = tidesdb_txn_delete(this._txn, cf.ptr, key, key.length);
     checkResult(result, 'failed to delete key');
+  }
+
+  /**
+   * Single-delete a key from the column family.
+   *
+   * Writes a tombstone with the same read semantics as delete(), but lets compaction
+   * drop the put and the tombstone together as soon as both appear in the same merge
+   * input. The caller promises the key has been put at most once between any two
+   * single-deletes (and between the start of the key's history and its first
+   * single-delete). The engine does not verify this; violating the contract can
+   * leave older puts visible after the single-delete.
+   *
+   * Use only for keys that are inserted exactly once and then deleted exactly once
+   * (e.g. classic insert-benchmark patterns, secondary-index entries on never-updated
+   * columns, log-style tables with scheduled purges). When in doubt, prefer delete().
+   *
+   * @param cf Column family to delete from.
+   * @param key Key as Buffer.
+   */
+  singleDelete(cf: ColumnFamily, key: Buffer): void {
+    if (!this._txn) throw new Error('Transaction has been freed');
+
+    const result = tidesdb_txn_single_delete(this._txn, cf.ptr, key, key.length);
+    checkResult(result, 'failed to single-delete key');
   }
 
   /**
