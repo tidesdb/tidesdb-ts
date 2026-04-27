@@ -24,7 +24,9 @@ import {
   CompressionAlgorithm,
   SyncMode,
   TidesDBError,
+  ErrorCode,
   CommitOp,
+  defaultConfig,
 } from "./index";
 
 function createTempDir(): string {
@@ -1116,7 +1118,7 @@ describe("TidesDB", () => {
         return 0;
       });
 
-      // First commit — hook should fire
+      // First commit - hook should fire
       const txn1 = db.beginTransaction();
       txn1.put(cf, Buffer.from("ck1"), Buffer.from("cv1"), -1);
       txn1.commit();
@@ -1128,7 +1130,7 @@ describe("TidesDB", () => {
       // Clear hook
       cf.clearCommitHook();
 
-      // Second commit — hook should NOT fire
+      // Second commit - hook should NOT fire
       const txn2 = db.beginTransaction();
       txn2.put(cf, Buffer.from("ck2"), Buffer.from("cv2"), -1);
       txn2.commit();
@@ -1330,6 +1332,210 @@ describe("TidesDB", () => {
     test("ErrReadonly is defined", () => {
       const { ErrorCode } = require("./types");
       expect(ErrorCode.ErrReadonly).toBe(-13);
+    });
+  });
+
+  describe("Tombstone CF Config", () => {
+    test("tombstone density fields round-trip through getStats config", () => {
+      db.createColumnFamily("tomb_cfg_cf", {
+        tombstoneDensityTrigger: 0.5,
+        tombstoneDensityMinEntries: 256,
+      });
+      const cf = db.getColumnFamily("tomb_cfg_cf");
+
+      const stats = cf.getStats();
+      expect(stats.config).toBeDefined();
+      expect(stats.config!.tombstoneDensityTrigger).toBeCloseTo(0.5, 6);
+      expect(stats.config!.tombstoneDensityMinEntries).toBe(256);
+    });
+
+    test("default tombstone min entries is sensible", () => {
+      db.createColumnFamily("tomb_default_cf");
+      const cf = db.getColumnFamily("tomb_default_cf");
+
+      const stats = cf.getStats();
+      expect(stats.config).toBeDefined();
+      // 0.0 means disabled by default
+      expect(stats.config!.tombstoneDensityTrigger).toBe(0);
+      // Library default is 1024 entries
+      expect(stats.config!.tombstoneDensityMinEntries).toBeGreaterThan(0);
+    });
+  });
+
+  describe("Tombstone Stats", () => {
+    test("tombstone stats fields populated after deletes", async () => {
+      db.createColumnFamily("tomb_stats_cf");
+      const cf = db.getColumnFamily("tomb_stats_cf");
+
+      const N = 50;
+
+      // Insert N keys, flush
+      const insertTxn = db.beginTransaction();
+      for (let i = 0; i < N; i++) {
+        const key = `tomb_key_${i.toString().padStart(4, "0")}`;
+        insertTxn.put(cf, Buffer.from(key), Buffer.from(`val_${i}`), -1);
+      }
+      insertTxn.commit();
+      insertTxn.free();
+      cf.flushMemtable();
+
+      // Delete N/2, flush
+      const deleteTxn = db.beginTransaction();
+      for (let i = 0; i < N / 2; i++) {
+        const key = `tomb_key_${i.toString().padStart(4, "0")}`;
+        deleteTxn.delete(cf, Buffer.from(key));
+      }
+      deleteTxn.commit();
+      deleteTxn.free();
+      cf.flushMemtable();
+
+      // Wait briefly for the flush to land
+      const start = Date.now();
+      while (cf.isFlushing() && Date.now() - start < 5000) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+
+      const stats = cf.getStats();
+      expect(stats.totalTombstones).toBeGreaterThan(0);
+      expect(stats.tombstoneRatio).toBeGreaterThanOrEqual(0);
+      expect(stats.tombstoneRatio).toBeLessThanOrEqual(1);
+      expect(stats.maxSstDensity).toBeGreaterThanOrEqual(0);
+      expect(stats.maxSstDensity).toBeLessThanOrEqual(1);
+      expect(stats.levelTombstoneCounts.length).toBe(stats.numLevels);
+      // 1-based level index, 0 if no SSTables
+      expect(stats.maxSstDensityLevel).toBeGreaterThanOrEqual(0);
+    });
+
+    test("tombstone stats are zero on a fresh column family", () => {
+      db.createColumnFamily("tomb_fresh_cf");
+      const cf = db.getColumnFamily("tomb_fresh_cf");
+
+      const stats = cf.getStats();
+      expect(stats.totalTombstones).toBe(0);
+      expect(stats.tombstoneRatio).toBe(0);
+      expect(stats.maxSstDensity).toBe(0);
+      expect(stats.maxSstDensityLevel).toBe(0);
+      expect(Array.isArray(stats.levelTombstoneCounts)).toBe(true);
+    });
+  });
+
+  describe("Compact Range", () => {
+    test("compactRange over a narrow range succeeds", () => {
+      db.createColumnFamily("compact_range_cf");
+      const cf = db.getColumnFamily("compact_range_cf");
+
+      // Multi-batch insert + flush to create several SSTables
+      for (let batch = 0; batch < 3; batch++) {
+        const txn = db.beginTransaction();
+        for (let i = 0; i < 50; i++) {
+          const key = `cr_key_${batch}_${i.toString().padStart(4, "0")}`;
+          const value = `cr_val_${batch}_${i}`;
+          txn.put(cf, Buffer.from(key), Buffer.from(value), -1);
+        }
+        txn.commit();
+        txn.free();
+        cf.flushMemtable();
+      }
+
+      expect(() =>
+        cf.compactRange(Buffer.from("cr_key_1_0010"), Buffer.from("cr_key_1_0040")),
+      ).not.toThrow();
+    });
+
+    test("compactRange with both endpoints null/empty is rejected", () => {
+      db.createColumnFamily("compact_range_invalid_cf");
+      const cf = db.getColumnFamily("compact_range_invalid_cf");
+
+      try {
+        cf.compactRange(null, null);
+        fail("expected compactRange to throw on null/null endpoints");
+      } catch (err) {
+        expect(err).toBeInstanceOf(TidesDBError);
+        expect((err as TidesDBError).code).toBe(ErrorCode.ErrInvalidArgs);
+      }
+
+      try {
+        cf.compactRange(Buffer.alloc(0), Buffer.alloc(0));
+        fail("expected compactRange to throw on empty/empty endpoints");
+      } catch (err) {
+        expect(err).toBeInstanceOf(TidesDBError);
+        expect((err as TidesDBError).code).toBe(ErrorCode.ErrInvalidArgs);
+      }
+    });
+
+    test("keys outside the compacted range remain readable", () => {
+      db.createColumnFamily("compact_range_read_cf");
+      const cf = db.getColumnFamily("compact_range_read_cf");
+
+      const txn = db.beginTransaction();
+      for (let i = 0; i < 100; i++) {
+        const key = `crr_key_${i.toString().padStart(4, "0")}`;
+        txn.put(cf, Buffer.from(key), Buffer.from(`crr_val_${i}`), -1);
+      }
+      txn.commit();
+      txn.free();
+      cf.flushMemtable();
+
+      cf.compactRange(
+        Buffer.from("crr_key_0010"),
+        Buffer.from("crr_key_0020"),
+      );
+
+      const readTxn = db.beginTransaction();
+      const outside = readTxn.get(cf, Buffer.from("crr_key_0080"));
+      expect(outside.toString()).toBe("crr_val_80");
+      readTxn.free();
+    });
+
+    test("compactRange with unbounded start", () => {
+      db.createColumnFamily("compact_range_unbounded_cf");
+      const cf = db.getColumnFamily("compact_range_unbounded_cf");
+
+      const txn = db.beginTransaction();
+      for (let i = 0; i < 30; i++) {
+        const key = `cru_key_${i.toString().padStart(4, "0")}`;
+        txn.put(cf, Buffer.from(key), Buffer.from(`cru_val_${i}`), -1);
+      }
+      txn.commit();
+      txn.free();
+      cf.flushMemtable();
+
+      expect(() =>
+        cf.compactRange(null, Buffer.from("cru_key_0015")),
+      ).not.toThrow();
+    });
+  });
+
+  describe("MaxConcurrentFlushes", () => {
+    test("open with maxConcurrentFlushes=1 and flush succeeds", () => {
+      const flushDir = createTempDir();
+      try {
+        const flushDb = TidesDB.open({
+          dbPath: flushDir,
+          maxConcurrentFlushes: 1,
+        });
+
+        flushDb.createColumnFamily("mcf_cf");
+        const cf = flushDb.getColumnFamily("mcf_cf");
+
+        const txn = flushDb.beginTransaction();
+        txn.put(cf, Buffer.from("mcf_key"), Buffer.from("mcf_value"), -1);
+        txn.commit();
+        txn.free();
+
+        expect(() => cf.flushMemtable()).not.toThrow();
+
+        flushDb.close();
+      } finally {
+        removeTempDir(flushDir);
+      }
+    });
+
+    test("defaultConfig().maxConcurrentFlushes is sourced from C library", () => {
+      const cfg = defaultConfig();
+      expect(typeof cfg.maxConcurrentFlushes).toBe("number");
+      // Library default is non-zero (currently TDB_DEFAULT_MAX_CONCURRENT_FLUSHES = 4)
+      expect(cfg.maxConcurrentFlushes).toBeGreaterThan(0);
     });
   });
 

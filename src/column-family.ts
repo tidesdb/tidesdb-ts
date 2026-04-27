@@ -20,6 +20,7 @@ import {
   tidesdb_get_stats,
   tidesdb_free_stats,
   tidesdb_compact,
+  tidesdb_compact_range,
   tidesdb_flush_memtable,
   tidesdb_is_flushing,
   tidesdb_is_compacting,
@@ -106,11 +107,16 @@ export class ColumnFamily {
     const btreeTotalNodes = (decoded.btree_total_nodes ?? 0) as number;
     const btreeMaxHeight = (decoded.btree_max_height ?? 0) as number;
     const btreeAvgHeight = (decoded.btree_avg_height ?? 0) as number;
+    const totalTombstones = (decoded.total_tombstones ?? 0) as number;
+    const tombstoneRatio = (decoded.tombstone_ratio ?? 0) as number;
+    const maxSstDensity = (decoded.max_sst_density ?? 0) as number;
+    const maxSstDensityLevel = (decoded.max_sst_density_level ?? 0) as number;
 
     // Parse level arrays
     const levelSizes: number[] = [];
     const levelNumSSTables: number[] = [];
     const levelKeyCounts: number[] = [];
+    const levelTombstoneCounts: number[] = [];
 
     if (numLevels > 0) {
       try {
@@ -137,6 +143,14 @@ export class ColumnFamily {
             numLevels,
           ) as number[];
           levelKeyCounts.push(...keyCounts);
+        }
+        if (decoded.level_tombstone_counts) {
+          const tombstoneCounts = koffi.decode(
+            decoded.level_tombstone_counts,
+            "uint64_t",
+            numLevels,
+          ) as number[];
+          levelTombstoneCounts.push(...tombstoneCounts);
         }
       } catch {
         // If decoding fails, arrays remain empty
@@ -173,6 +187,8 @@ export class ColumnFamily {
           minDiskSpace: cfgDecoded.min_disk_space as number,
           l1FileCountTrigger: cfgDecoded.l1_file_count_trigger as number,
           l0QueueStallThreshold: cfgDecoded.l0_queue_stall_threshold as number,
+          tombstoneDensityTrigger: cfgDecoded.tombstone_density_trigger as number,
+          tombstoneDensityMinEntries: cfgDecoded.tombstone_density_min_entries as number,
           useBtree: (cfgDecoded.use_btree as number) !== 0,
           objectLazyCompaction: (cfgDecoded.object_lazy_compaction as number) !== 0,
           objectPrefetchCompaction: (cfgDecoded.object_prefetch_compaction as number) !== 0,
@@ -201,6 +217,11 @@ export class ColumnFamily {
       btreeTotalNodes: useBtree ? btreeTotalNodes : undefined,
       btreeMaxHeight: useBtree ? btreeMaxHeight : undefined,
       btreeAvgHeight: useBtree ? btreeAvgHeight : undefined,
+      totalTombstones,
+      tombstoneRatio,
+      levelTombstoneCounts,
+      maxSstDensity,
+      maxSstDensityLevel,
     };
   }
 
@@ -210,6 +231,36 @@ export class ColumnFamily {
   compact(): void {
     const result = tidesdb_compact(this._cf);
     checkResult(result, "failed to compact column family");
+  }
+
+  /**
+   * Synchronously compact every SSTable whose key range overlaps
+   * `[startKey, endKey)`. Output is merged toward the largest level affected.
+   *
+   * Pass `null` for an unbounded endpoint on that side. Both endpoints
+   * `null`/empty is rejected with `ErrInvalidArgs`; for full CF compaction
+   * use `compact()`.
+   *
+   * Blocks the calling thread until the merge commits or fails (does not
+   * enqueue onto the compaction thread pool).
+   *
+   * @param startKey Inclusive start key, or null for unbounded.
+   * @param endKey Exclusive end key, or null for unbounded.
+   */
+  compactRange(startKey: Buffer | null, endKey: Buffer | null): void {
+    const startBuf = startKey && startKey.length > 0 ? startKey : null;
+    const endBuf = endKey && endKey.length > 0 ? endKey : null;
+    const startSize = startBuf ? startBuf.length : 0;
+    const endSize = endBuf ? endBuf.length : 0;
+
+    const result = tidesdb_compact_range(
+      this._cf,
+      startBuf,
+      startSize,
+      endBuf,
+      endSize,
+    );
+    checkResult(result, "failed to compact range");
   }
 
   /**
@@ -291,6 +342,8 @@ export class ColumnFamily {
       min_disk_space: config.minDiskSpace ?? 100 * 1024 * 1024,
       l1_file_count_trigger: config.l1FileCountTrigger ?? 4,
       l0_queue_stall_threshold: config.l0QueueStallThreshold ?? 20,
+      tombstone_density_trigger: config.tombstoneDensityTrigger ?? 0,
+      tombstone_density_min_entries: config.tombstoneDensityMinEntries ?? 0,
       use_btree: config.useBtree ? 1 : 0,
       commit_hook_fn: null,
       commit_hook_ctx: null,

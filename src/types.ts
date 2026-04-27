@@ -134,6 +134,12 @@ export interface Config {
   maxOpenSSTables?: number;
   /** Global memory limit in bytes. Default: 0 (auto, 50% of system RAM). */
   maxMemoryUsage?: number;
+  /**
+   * Global semaphore on the number of in-flight memtable flushes across all
+   * column families. Bounds total transient memory and work-queue depth when
+   * many column families flush at once. 0 falls back to the library default.
+   */
+  maxConcurrentFlushes?: number;
   /** Write logs to file instead of stderr. Default: false */
   logToFile?: boolean;
   /** Log file truncation size in bytes. Default: 24MB, 0 = no truncation */
@@ -200,6 +206,17 @@ export interface ColumnFamilyConfig {
   l1FileCountTrigger?: number;
   /** L0 queue stall threshold for backpressure. */
   l0QueueStallThreshold?: number;
+  /**
+   * Per-SSTable tombstone density (`tombstone_count / num_entries`) above which
+   * compaction priority escalates. Range `[0.0, 1.0]`; `0.0` (default) disables.
+   */
+  tombstoneDensityTrigger?: number;
+  /**
+   * Minimum entry count for an SSTable to be considered by the density trigger;
+   * tables with fewer entries are ignored to prevent tiny-SSTable noise.
+   * Default: `1024`.
+   */
+  tombstoneDensityMinEntries?: number;
   /** Use B+tree format for klog (default: false = block-based). */
   useBtree?: boolean;
   /** Compact less aggressively in object store mode (default: false). */
@@ -244,6 +261,16 @@ export interface Stats {
   btreeMaxHeight?: number;
   /** Average tree height across all SSTables (only if useBtree=true). */
   btreeAvgHeight?: number;
+  /** Sum of tombstone counts across every SSTable in the column family. */
+  totalTombstones: number;
+  /** `totalTombstones / totalKeys`, or 0 when there are no keys. Range `[0.0, 1.0]`. */
+  tombstoneRatio: number;
+  /** Per-level tombstone counts (parallels `levelKeyCounts`). Length equals `numLevels`. */
+  levelTombstoneCounts: number[];
+  /** Worst per-SSTable tombstone density observed in the column family. Range `[0.0, 1.0]`. */
+  maxSstDensity: number;
+  /** 1-based level index where `maxSstDensity` was observed (0 if no SSTables). */
+  maxSstDensityLevel: number;
 }
 
 /**

@@ -73,6 +73,7 @@ export const TidesDBConfigStruct = koffi.struct("tidesdb_config_t", {
   unified_memtable_sync_interval_us: "uint64_t",
   object_store: "void *",
   object_store_config: "void *",
+  max_concurrent_flushes: "int",
 });
 
 // tidesdb_commit_op_t structure (used by commit hook callback)
@@ -122,6 +123,8 @@ export const ColumnFamilyConfigStruct = koffi.struct(
     min_disk_space: "uint64_t",
     l1_file_count_trigger: "int",
     l0_queue_stall_threshold: "int",
+    tombstone_density_trigger: "double",
+    tombstone_density_min_entries: "uint64_t",
     use_btree: "int",
     commit_hook_fn: "void *",
     commit_hook_ctx: "void *",
@@ -195,6 +198,11 @@ export const StatsStruct = koffi.struct("tidesdb_stats_t", {
   btree_total_nodes: "uint64_t",
   btree_max_height: "uint32_t",
   btree_avg_height: "double",
+  total_tombstones: "uint64_t",
+  tombstone_ratio: "double",
+  level_tombstone_counts: "uint64_t *",
+  max_sst_density: "double",
+  max_sst_density_level: "int",
 });
 
 export const StatsStructPtr = koffi.pointer(StatsStruct);
@@ -332,6 +340,9 @@ export const tidesdb_iter_free = lib.func(
 // Maintenance operations
 export const tidesdb_compact = lib.func(
   "int tidesdb_compact(tidesdb_column_family_t *cf)",
+);
+export const tidesdb_compact_range = lib.func(
+  "int tidesdb_compact_range(tidesdb_column_family_t *cf, const uint8_t *start_key, size_t start_key_size, const uint8_t *end_key, size_t end_key_size)",
 );
 export const tidesdb_flush_memtable = lib.func(
   "int tidesdb_flush_memtable(tidesdb_column_family_t *cf)",
