@@ -19,6 +19,7 @@ import {
   koffi,
   tidesdb_open,
   tidesdb_close,
+  tidesdb_default_config,
   tidesdb_default_column_family_config,
   tidesdb_create_column_family,
   tidesdb_drop_column_family,
@@ -60,24 +61,27 @@ import {
 type DBPtr = unknown;
 
 /**
- * Default database configuration.
+ * Default database configuration. Sourced from the C library so binding
+ * defaults track the upstream library rather than hardcoded constants.
  */
 export function defaultConfig(): Partial<Config> {
+  const cConfig = tidesdb_default_config();
   return {
-    numFlushThreads: 2,
-    numCompactionThreads: 2,
-    logLevel: LogLevel.Info,
-    blockCacheSize: 64 * 1024 * 1024,
-    maxOpenSSTables: 256,
-    maxMemoryUsage: 0,
-    logToFile: false,
-    logTruncationAt: 24 * 1024 * 1024,
-    unifiedMemtable: false,
-    unifiedMemtableWriteBufferSize: 0,
-    unifiedMemtableSkipListMaxLevel: 0,
-    unifiedMemtableSkipListProbability: 0,
-    unifiedMemtableSyncMode: SyncMode.None,
-    unifiedMemtableSyncIntervalUs: 0,
+    numFlushThreads: cConfig.num_flush_threads as number,
+    numCompactionThreads: cConfig.num_compaction_threads as number,
+    logLevel: cConfig.log_level as LogLevel,
+    blockCacheSize: cConfig.block_cache_size as number,
+    maxOpenSSTables: cConfig.max_open_sstables as number,
+    maxMemoryUsage: cConfig.max_memory_usage as number,
+    logToFile: (cConfig.log_to_file as number) !== 0,
+    logTruncationAt: cConfig.log_truncation_at as number,
+    unifiedMemtable: (cConfig.unified_memtable as number) !== 0,
+    unifiedMemtableWriteBufferSize: cConfig.unified_memtable_write_buffer_size as number,
+    unifiedMemtableSkipListMaxLevel: cConfig.unified_memtable_skip_list_max_level as number,
+    unifiedMemtableSkipListProbability: cConfig.unified_memtable_skip_list_probability as number,
+    unifiedMemtableSyncMode: cConfig.unified_memtable_sync_mode as SyncMode,
+    unifiedMemtableSyncIntervalUs: cConfig.unified_memtable_sync_interval_us as number,
+    maxConcurrentFlushes: cConfig.max_concurrent_flushes as number,
   };
 }
 
@@ -106,6 +110,8 @@ export function defaultColumnFamilyConfig(): ColumnFamilyConfig {
     minDiskSpace: cConfig.min_disk_space as number,
     l1FileCountTrigger: cConfig.l1_file_count_trigger as number,
     l0QueueStallThreshold: cConfig.l0_queue_stall_threshold as number,
+    tombstoneDensityTrigger: cConfig.tombstone_density_trigger as number,
+    tombstoneDensityMinEntries: cConfig.tombstone_density_min_entries as number,
     useBtree: cConfig.use_btree !== 0,
     objectLazyCompaction: cConfig.object_lazy_compaction !== 0,
     objectPrefetchCompaction: cConfig.object_prefetch_compaction !== 0,
@@ -205,6 +211,7 @@ export class TidesDB {
       unified_memtable_sync_interval_us: mergedConfig.unifiedMemtableSyncIntervalUs!,
       object_store: objStorePtr,
       object_store_config: objStoreCfg,
+      max_concurrent_flushes: mergedConfig.maxConcurrentFlushes ?? 0,
     };
 
     const dbPtrOut: unknown[] = [null];
@@ -277,6 +284,8 @@ export class TidesDB {
       min_disk_space: mergedConfig.minDiskSpace!,
       l1_file_count_trigger: mergedConfig.l1FileCountTrigger!,
       l0_queue_stall_threshold: mergedConfig.l0QueueStallThreshold!,
+      tombstone_density_trigger: mergedConfig.tombstoneDensityTrigger ?? 0,
+      tombstone_density_min_entries: mergedConfig.tombstoneDensityMinEntries ?? 0,
       use_btree: mergedConfig.useBtree ? 1 : 0,
       commit_hook_fn: null,
       commit_hook_ctx: null,
