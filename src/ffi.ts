@@ -74,6 +74,7 @@ export const TidesDBConfigStruct = koffi.struct("tidesdb_config_t", {
   object_store: "void *",
   object_store_config: "void *",
   max_concurrent_flushes: "int",
+  finish_compactions_on_close: "int",
 });
 
 // tidesdb_commit_op_t structure (used by commit hook callback)
@@ -167,6 +168,15 @@ export const DbStatsStruct = koffi.struct("tidesdb_db_stats_t", {
   total_uploads: "uint64_t",
   total_upload_failures: "uint64_t",
   replica_mode: "int",
+  // write-amplification counters (lifetime since open, on-disk framed bytes)
+  uwal_bytes_written: "uint64_t",
+  wal_bytes_written: "uint64_t",
+  flush_bytes_written: "uint64_t",
+  compaction_bytes_written: "uint64_t",
+  compaction_bytes_read: "uint64_t",
+  user_bytes_written: "uint64_t",
+  flush_count: "uint64_t",
+  compaction_count: "uint64_t",
 });
 
 // tidesdb_cache_stats_t structure
@@ -203,6 +213,14 @@ export const StatsStruct = koffi.struct("tidesdb_stats_t", {
   level_tombstone_counts: "uint64_t *",
   max_sst_density: "double",
   max_sst_density_level: "int",
+  // write-amplification counters (lifetime since open, on-disk framed bytes)
+  wal_bytes_written: "uint64_t",
+  flush_bytes_written: "uint64_t",
+  compaction_bytes_written: "uint64_t",
+  compaction_bytes_read: "uint64_t",
+  user_bytes_written: "uint64_t",
+  flush_count: "uint64_t",
+  compaction_count: "uint64_t",
 });
 
 export const StatsStructPtr = koffi.pointer(StatsStruct);
@@ -434,5 +452,26 @@ export const tidesdb_objstore_fs_create = lib.func(
 
 // Memory management
 export const tidesdb_free = lib.func("void tidesdb_free(void *ptr)");
+
+// Initialization / custom allocator support
+export const tidesdb_init = lib.func(
+  "int tidesdb_init(void *malloc_fn, void *calloc_fn, void *realloc_fn, void *free_fn)",
+);
+export const tidesdb_finalize = lib.func("void tidesdb_finalize()");
+
+// Open-file limit
+export const tidesdb_raise_open_file_limit = lib.func(
+  "long tidesdb_raise_open_file_limit(long desired)",
+);
+
+// Cancel background compaction db-wide (fast shutdown)
+export const tidesdb_cancel_background_work = lib.func(
+  "int tidesdb_cancel_background_work(tidesdb_t *db)",
+);
+
+// Query whether a compression backend was compiled into the library
+export const tidesdb_compression_available = lib.func(
+  "int tidesdb_compression_available(int type)",
+);
 
 export { koffi };

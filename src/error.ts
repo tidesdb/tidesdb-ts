@@ -60,6 +60,8 @@ export class TidesDBError extends Error {
         return 'database is locked';
       case ErrorCode.ErrReadonly:
         return 'database is read-only';
+      case ErrorCode.ErrBusy:
+        return 'resource is busy';
       default:
         return 'unknown error';
     }
