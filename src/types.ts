@@ -76,6 +76,36 @@ export enum ErrorCode {
   ErrUnknown = -11,
   ErrLocked = -12,
   ErrReadonly = -13,
+  ErrBusy = -14,
+}
+
+/**
+ * Names of the built-in comparators that TidesDB auto-registers on database
+ * open. Use any of these as `ColumnFamilyConfig.comparatorName` without calling
+ * `registerComparator()` first.
+ */
+export enum BuiltinComparator {
+  /** Binary byte-by-byte comparison (default). Shorter key sorts first on tie. */
+  Memcmp = "memcmp",
+  /** Null-terminated string comparison via `strcmp()`. Keys must be null-terminated. */
+  Lexicographic = "lexicographic",
+  /** Unsigned 64-bit integer comparison; falls back to memcmp if key size != 8. */
+  Uint64 = "uint64",
+  /** Signed 64-bit integer comparison; falls back to memcmp if key size != 8. */
+  Int64 = "int64",
+  /** Reverse binary comparison (descending order). */
+  Reverse = "reverse",
+  /** Case-insensitive ASCII comparison (A-Z folded to a-z). */
+  CaseInsensitive = "case_insensitive",
+}
+
+/**
+ * Object store backend identifiers reported by the engine.
+ */
+export enum ObjStoreBackend {
+  Fs = 0,
+  S3 = 1,
+  Unknown = 99,
 }
 
 /**
@@ -140,6 +170,12 @@ export interface Config {
    * many column families flush at once. 0 falls back to the library default.
    */
   maxConcurrentFlushes?: number;
+  /**
+   * Close behavior. `false` (default) cancels in-flight compactions at their
+   * next checkpoint for a fast shutdown (no data loss). `true` lets in-flight
+   * compactions run to completion before `close()` returns.
+   */
+  finishCompactionsOnClose?: boolean;
   /** Write logs to file instead of stderr. Default: false */
   logToFile?: boolean;
   /** Log file truncation size in bytes. Default: 24MB, 0 = no truncation */
@@ -271,6 +307,28 @@ export interface Stats {
   maxSstDensity: number;
   /** 1-based level index where `maxSstDensity` was observed (0 if no SSTables). */
   maxSstDensityLevel: number;
+  /**
+   * Framed bytes appended to this CF's WAL (lifetime since open). Always `0` in
+   * unified-memtable mode -- the shared WAL volume is reported db-wide via
+   * `DbStats.uwalBytesWritten`.
+   */
+  walBytesWritten: number;
+  /** On-disk bytes this CF's flushes wrote to L0 SSTables (lifetime since open). */
+  flushBytesWritten: number;
+  /** On-disk bytes this CF's compactions wrote (lifetime since open). */
+  compactionBytesWritten: number;
+  /** On-disk bytes this CF's compactions read as input (lifetime since open). */
+  compactionBytesRead: number;
+  /**
+   * Logical key+value bytes committed to this CF (write-amplification
+   * denominator). CF write amplification = (wal + flush + compaction writes) /
+   * `userBytesWritten`.
+   */
+  userBytesWritten: number;
+  /** Flushed SSTables produced by this CF (lifetime since open). */
+  flushCount: number;
+  /** Compaction output SSTables produced by this CF (lifetime since open). */
+  compactionCount: number;
 }
 
 /**
@@ -339,6 +397,28 @@ export interface DbStats {
   totalUploadFailures: number;
   /** Whether running in read-only replica mode. */
   replicaMode: boolean;
+  /**
+   * Framed bytes appended to the shared unified WAL (lifetime since open).
+   * `0` when unified-memtable mode is off.
+   */
+  uwalBytesWritten: number;
+  /** Per-CF WAL bytes summed across all column families (lifetime since open). */
+  walBytesWritten: number;
+  /** Flush output bytes summed across all column families (lifetime since open). */
+  flushBytesWritten: number;
+  /** Compaction output bytes summed across all column families (lifetime since open). */
+  compactionBytesWritten: number;
+  /** Compaction input bytes summed across all column families (lifetime since open). */
+  compactionBytesRead: number;
+  /**
+   * Logical committed bytes summed across all column families. Db-wide write
+   * amplification = (uwal + wal + flush + compaction writes) / `userBytesWritten`.
+   */
+  userBytesWritten: number;
+  /** Flushed SSTables summed across all column families (lifetime since open). */
+  flushCount: number;
+  /** Compaction output SSTables summed across all column families (lifetime since open). */
+  compactionCount: number;
 }
 
 /**

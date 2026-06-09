@@ -38,8 +38,13 @@ import {
   tidesdb_get_db_stats,
   tidesdb_delete_column_family,
   tidesdb_promote_to_primary,
+  tidesdb_cancel_background_work,
   tidesdb_objstore_default_config,
   tidesdb_objstore_fs_create,
+  tidesdb_init,
+  tidesdb_finalize,
+  tidesdb_raise_open_file_limit,
+  tidesdb_compression_available,
 } from "./ffi";
 import { checkResult, TidesDBError } from "./error";
 import { ColumnFamily } from "./column-family";
@@ -82,6 +87,7 @@ export function defaultConfig(): Partial<Config> {
     unifiedMemtableSyncMode: cConfig.unified_memtable_sync_mode as SyncMode,
     unifiedMemtableSyncIntervalUs: cConfig.unified_memtable_sync_interval_us as number,
     maxConcurrentFlushes: cConfig.max_concurrent_flushes as number,
+    finishCompactionsOnClose: (cConfig.finish_compactions_on_close as number) !== 0,
   };
 }
 
@@ -154,6 +160,58 @@ export class TidesDB {
   }
 
   /**
+   * Explicitly initialize the TidesDB library, optionally with custom memory
+   * allocators. This is **optional** -- the library auto-initializes on first
+   * use with the system allocator. Custom allocators are not supported from
+   * TypeScript, so this always uses the system allocator.
+   *
+   * MUST be called before any other TidesDB call if used. Calling it after the
+   * library has already initialized (e.g. after the first `open()`) is a no-op.
+   *
+   * @returns `true` if this call performed the initialization, `false` if the
+   *          library was already initialized.
+   */
+  static init(): boolean {
+    return tidesdb_init(null, null, null, null) === 0;
+  }
+
+  /**
+   * Finalize the TidesDB library and reset the allocator. After this call,
+   * `init()` may be called again.
+   *
+   * Advanced / teardown use only. Do not call while any database, transaction,
+   * iterator, or registered callback is still live -- doing so invalidates them.
+   */
+  static finalize(): void {
+    tidesdb_finalize();
+  }
+
+  /**
+   * Raise this process's open-file ceiling toward `desired` descriptors so a
+   * database can keep more SSTables open. Call **before** `open()` -- the engine
+   * sizes `maxOpenSSTables` to fit the ceiling at open time. An explicit,
+   * opt-in operator action; a failed or partial raise is non-fatal.
+   *
+   * @param desired Target descriptor count; `<= 0` just reports the current ceiling.
+   * @returns The open-file ceiling in effect after the attempt.
+   */
+  static raiseOpenFileLimit(desired: number): number {
+    return tidesdb_raise_open_file_limit(desired) as number;
+  }
+
+  /**
+   * Query whether a compression backend was compiled into the linked library.
+   * Every algorithm is always defined, but whether it can actually be used is a
+   * build-time choice (the `-DTIDESDB_WITH_*` options).
+   *
+   * @param algorithm Compression algorithm to check.
+   * @returns `true` if the backend is available at runtime.
+   */
+  static isCompressionAvailable(algorithm: CompressionAlgorithm): boolean {
+    return tidesdb_compression_available(algorithm) !== 0;
+  }
+
+  /**
    * Open a TidesDB database with the given configuration.
    */
   static open(config: Config): TidesDB {
@@ -212,6 +270,7 @@ export class TidesDB {
       object_store: objStorePtr,
       object_store_config: objStoreCfg,
       max_concurrent_flushes: mergedConfig.maxConcurrentFlushes ?? 0,
+      finish_compactions_on_close: mergedConfig.finishCompactionsOnClose ? 1 : 0,
     };
 
     const dbPtrOut: unknown[] = [null];
@@ -514,6 +573,21 @@ export class TidesDB {
   }
 
   /**
+   * Cancel background compaction db-wide. In-flight merges bail safely and
+   * queued compaction is skipped; flushes are unaffected so durability is
+   * preserved. Blocks (bounded) until compaction is idle.
+   *
+   * Sticky for the session and reset on next open -- intended to be called
+   * right before `close()` for a fast shutdown.
+   */
+  cancelBackgroundWork(): void {
+    if (!this._db) throw new Error("Database has been closed");
+
+    const result = tidesdb_cancel_background_work(this._db);
+    checkResult(result, "failed to cancel background work");
+  }
+
+  /**
    * Get aggregate statistics across the entire database instance.
    * The returned struct is stack-allocated; no free is needed.
    */
@@ -552,6 +626,14 @@ export class TidesDB {
       total_uploads: 0,
       total_upload_failures: 0,
       replica_mode: 0,
+      uwal_bytes_written: 0,
+      wal_bytes_written: 0,
+      flush_bytes_written: 0,
+      compaction_bytes_written: 0,
+      compaction_bytes_read: 0,
+      user_bytes_written: 0,
+      flush_count: 0,
+      compaction_count: 0,
     };
 
     const result = tidesdb_get_db_stats(this._db, cStats);
@@ -599,6 +681,14 @@ export class TidesDB {
       totalUploads: cStats.total_uploads as number,
       totalUploadFailures: cStats.total_upload_failures as number,
       replicaMode: cStats.replica_mode !== 0,
+      uwalBytesWritten: cStats.uwal_bytes_written as number,
+      walBytesWritten: cStats.wal_bytes_written as number,
+      flushBytesWritten: cStats.flush_bytes_written as number,
+      compactionBytesWritten: cStats.compaction_bytes_written as number,
+      compactionBytesRead: cStats.compaction_bytes_read as number,
+      userBytesWritten: cStats.user_bytes_written as number,
+      flushCount: cStats.flush_count as number,
+      compactionCount: cStats.compaction_count as number,
     };
   }
 

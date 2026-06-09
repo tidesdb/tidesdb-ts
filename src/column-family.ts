@@ -111,6 +111,13 @@ export class ColumnFamily {
     const tombstoneRatio = (decoded.tombstone_ratio ?? 0) as number;
     const maxSstDensity = (decoded.max_sst_density ?? 0) as number;
     const maxSstDensityLevel = (decoded.max_sst_density_level ?? 0) as number;
+    const walBytesWritten = (decoded.wal_bytes_written ?? 0) as number;
+    const flushBytesWritten = (decoded.flush_bytes_written ?? 0) as number;
+    const compactionBytesWritten = (decoded.compaction_bytes_written ?? 0) as number;
+    const compactionBytesRead = (decoded.compaction_bytes_read ?? 0) as number;
+    const userBytesWritten = (decoded.user_bytes_written ?? 0) as number;
+    const flushCount = (decoded.flush_count ?? 0) as number;
+    const compactionCount = (decoded.compaction_count ?? 0) as number;
 
     // Parse level arrays
     const levelSizes: number[] = [];
@@ -222,6 +229,13 @@ export class ColumnFamily {
       levelTombstoneCounts,
       maxSstDensity,
       maxSstDensityLevel,
+      walBytesWritten,
+      flushBytesWritten,
+      compactionBytesWritten,
+      compactionBytesRead,
+      userBytesWritten,
+      flushCount,
+      compactionCount,
     };
   }
 

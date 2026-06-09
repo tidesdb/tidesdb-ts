@@ -27,6 +27,7 @@ import {
   ErrorCode,
   CommitOp,
   defaultConfig,
+  BuiltinComparator,
 } from "./index";
 
 function createTempDir(): string {
@@ -1534,8 +1535,9 @@ describe("TidesDB", () => {
     test("defaultConfig().maxConcurrentFlushes is sourced from C library", () => {
       const cfg = defaultConfig();
       expect(typeof cfg.maxConcurrentFlushes).toBe("number");
-      // Library default is non-zero (currently TDB_DEFAULT_MAX_CONCURRENT_FLUSHES = 4)
-      expect(cfg.maxConcurrentFlushes).toBeGreaterThan(0);
+      // The library default is 0, which means "pin to the resolved
+      // num_flush_threads" at open time rather than a fixed cap.
+      expect(cfg.maxConcurrentFlushes).toBeGreaterThanOrEqual(0);
     });
   });
 
@@ -1559,6 +1561,228 @@ describe("TidesDB", () => {
       const readTxn = db.beginTransaction();
       expect(readTxn.get(renamedCf, Buffer.from("rk1")).toString()).toBe("rv1");
       readTxn.free();
+    });
+  });
+
+  describe("Library Utilities", () => {
+    test("raiseOpenFileLimit reports a positive ceiling", () => {
+      // desired <= 0 just reports the current ceiling without raising it
+      const current = TidesDB.raiseOpenFileLimit(0);
+      expect(typeof current).toBe("number");
+      expect(current).toBeGreaterThan(0);
+    });
+
+    test("raiseOpenFileLimit toward a target returns an effective ceiling", () => {
+      const current = TidesDB.raiseOpenFileLimit(0);
+      const after = TidesDB.raiseOpenFileLimit(current);
+      // A failed/partial raise is non-fatal; the ceiling never drops below current.
+      expect(after).toBeGreaterThanOrEqual(current);
+    });
+
+    test("isCompressionAvailable returns booleans for every algorithm", () => {
+      for (const algo of [
+        CompressionAlgorithm.NoCompression,
+        CompressionAlgorithm.SnappyCompression,
+        CompressionAlgorithm.Lz4Compression,
+        CompressionAlgorithm.ZstdCompression,
+        CompressionAlgorithm.Lz4FastCompression,
+      ]) {
+        expect(typeof TidesDB.isCompressionAvailable(algo)).toBe("boolean");
+      }
+      // "No compression" is always available.
+      expect(
+        TidesDB.isCompressionAvailable(CompressionAlgorithm.NoCompression),
+      ).toBe(true);
+    });
+
+    test("init is a no-op once the library is already initialized", () => {
+      // beforeEach already opened a db, so the library is initialized.
+      expect(TidesDB.init()).toBe(false);
+    });
+  });
+
+  describe("Cancel Background Work", () => {
+    test("cancelBackgroundWork succeeds and reads still work", () => {
+      db.createColumnFamily("cbw_cf");
+      const cf = db.getColumnFamily("cbw_cf");
+
+      const txn = db.beginTransaction();
+      txn.put(cf, Buffer.from("cbw_key"), Buffer.from("cbw_value"), -1);
+      txn.commit();
+      txn.free();
+
+      expect(() => db.cancelBackgroundWork()).not.toThrow();
+
+      const readTxn = db.beginTransaction();
+      expect(readTxn.get(cf, Buffer.from("cbw_key")).toString()).toBe(
+        "cbw_value",
+      );
+      readTxn.free();
+    });
+
+    test("cancelBackgroundWork throws after close", () => {
+      const dir = createTempDir();
+      try {
+        const tmpDb = TidesDB.open({ dbPath: dir });
+        tmpDb.close();
+        expect(() => tmpDb.cancelBackgroundWork()).toThrow();
+      } finally {
+        removeTempDir(dir);
+      }
+    });
+  });
+
+  describe("finishCompactionsOnClose config", () => {
+    test("defaultConfig exposes finishCompactionsOnClose as a boolean", () => {
+      const cfg = defaultConfig();
+      expect(typeof cfg.finishCompactionsOnClose).toBe("boolean");
+    });
+
+    test("open honors finishCompactionsOnClose without error", () => {
+      const dir = createTempDir();
+      try {
+        const fcDb = TidesDB.open({
+          dbPath: dir,
+          finishCompactionsOnClose: true,
+        });
+        fcDb.createColumnFamily("fc_cf");
+        const cf = fcDb.getColumnFamily("fc_cf");
+        const txn = fcDb.beginTransaction();
+        txn.put(cf, Buffer.from("fck"), Buffer.from("fcv"), -1);
+        txn.commit();
+        txn.free();
+        expect(() => fcDb.close()).not.toThrow();
+      } finally {
+        removeTempDir(dir);
+      }
+    });
+  });
+
+  describe("Write-Amplification Stats", () => {
+    test("column family stats expose write-amplification counters", () => {
+      db.createColumnFamily("wa_cf");
+      const cf = db.getColumnFamily("wa_cf");
+
+      const txn = db.beginTransaction();
+      for (let i = 0; i < 50; i++) {
+        txn.put(cf, Buffer.from(`wa_key_${i}`), Buffer.from(`wa_value_${i}`), -1);
+      }
+      txn.commit();
+      txn.free();
+
+      cf.flushMemtable();
+
+      const stats = cf.getStats();
+      for (const field of [
+        "walBytesWritten",
+        "flushBytesWritten",
+        "compactionBytesWritten",
+        "compactionBytesRead",
+        "userBytesWritten",
+        "flushCount",
+        "compactionCount",
+      ] as const) {
+        expect(typeof stats[field]).toBe("number");
+        expect(stats[field]).toBeGreaterThanOrEqual(0);
+      }
+
+      // We wrote real user bytes, so the denominator must be non-zero.
+      expect(stats.userBytesWritten).toBeGreaterThan(0);
+    });
+
+    test("db stats expose aggregate write-amplification counters", () => {
+      db.createColumnFamily("wa_db_cf");
+      const cf = db.getColumnFamily("wa_db_cf");
+
+      const txn = db.beginTransaction();
+      txn.put(cf, Buffer.from("wadbk"), Buffer.from("wadbv"), -1);
+      txn.commit();
+      txn.free();
+
+      const dbStats = db.getDbStats();
+      for (const field of [
+        "uwalBytesWritten",
+        "walBytesWritten",
+        "flushBytesWritten",
+        "compactionBytesWritten",
+        "compactionBytesRead",
+        "userBytesWritten",
+        "flushCount",
+        "compactionCount",
+      ] as const) {
+        expect(typeof dbStats[field]).toBe("number");
+        expect(dbStats[field]).toBeGreaterThanOrEqual(0);
+      }
+
+      expect(dbStats.userBytesWritten).toBeGreaterThan(0);
+    });
+  });
+
+  describe("ErrBusy Error Code", () => {
+    test("ErrBusy is defined with the correct numeric value", () => {
+      expect(ErrorCode.ErrBusy).toBe(-14);
+    });
+
+    test("ErrBusy maps to a human-readable message", () => {
+      const err = new TidesDBError(ErrorCode.ErrBusy, "op");
+      expect(err.message).toContain("busy");
+      expect(err.code).toBe(ErrorCode.ErrBusy);
+    });
+  });
+
+  describe("Built-in Comparators", () => {
+    test("built-in comparator names are usable without manual registration", () => {
+      // These are auto-registered by the engine on open.
+      const names = [
+        BuiltinComparator.Memcmp,
+        BuiltinComparator.Lexicographic,
+        BuiltinComparator.Uint64,
+        BuiltinComparator.Int64,
+        BuiltinComparator.Reverse,
+        BuiltinComparator.CaseInsensitive,
+      ];
+
+      names.forEach((name, i) => {
+        const cfName = `cmp_cf_${i}`;
+        expect(() =>
+          db.createColumnFamily(cfName, { comparatorName: name }),
+        ).not.toThrow();
+        expect(db.getColumnFamily(cfName).name).toBe(cfName);
+      });
+    });
+
+    test("uint64 comparator orders 8-byte keys numerically", () => {
+      db.createColumnFamily("u64_cf", {
+        comparatorName: BuiltinComparator.Uint64,
+      });
+      const cf = db.getColumnFamily("u64_cf");
+
+      const mk = (n: bigint): Buffer => {
+        const b = Buffer.alloc(8);
+        b.writeBigUInt64LE(n);
+        return b;
+      };
+
+      const txn = db.beginTransaction();
+      // Insert out of order; numeric order should be 2, 10, 256.
+      for (const n of [256n, 2n, 10n]) {
+        txn.put(cf, mk(n), Buffer.from(`v${n}`), -1);
+      }
+      txn.commit();
+      txn.free();
+
+      const readTxn = db.beginTransaction();
+      const iter = readTxn.newIterator(cf);
+      const order: bigint[] = [];
+      iter.seekToFirst();
+      while (iter.isValid()) {
+        order.push(iter.key().readBigUInt64LE());
+        iter.next();
+      }
+      iter.free();
+      readTxn.free();
+
+      expect(order).toEqual([2n, 10n, 256n]);
     });
   });
 });

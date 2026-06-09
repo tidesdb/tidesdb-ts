@@ -96,6 +96,8 @@ export {
   LogLevel,
   IsolationLevel,
   ErrorCode,
+  BuiltinComparator,
+  ObjStoreBackend,
   Config,
   ColumnFamilyConfig,
   ObjectStoreConfig,
