@@ -147,6 +147,39 @@ export interface ObjectStoreConfig {
 }
 
 /**
+ * Configuration for an S3-compatible object store connector (AWS S3, MinIO,
+ * etc.). Requires a `libtidesdb` built with S3 support (`TIDESDB_WITH_S3`).
+ * The all-default optional fields are secure: TLS verification on, the system
+ * CA bundle, and the library's built-in multipart sizes.
+ */
+export interface S3Config {
+  /** S3 endpoint (e.g. "s3.amazonaws.com" or "minio.local:9000"). */
+  endpoint: string;
+  /** Bucket name. */
+  bucket: string;
+  /** Key prefix (e.g. "production/db1/"). Default: none. */
+  prefix?: string | null;
+  /** AWS access key ID. */
+  accessKey: string;
+  /** AWS secret access key. */
+  secretKey: string;
+  /** AWS region (e.g. "us-east-1"). Default: none (use endpoint default / MinIO). */
+  region?: string | null;
+  /** Use HTTPS. Default: true */
+  useSsl?: boolean;
+  /** Use path-style URLs (required for MinIO). Default: false (virtual-hosted, AWS). */
+  usePathStyle?: boolean;
+  /** Custom CA bundle file path. Default: null (system bundle). */
+  tlsCaPath?: string | null;
+  /** Disable TLS peer+host verification (test only, insecure). Default: false. */
+  tlsInsecureSkipVerify?: boolean;
+  /** Object size at/above which multipart upload is used (0 = library default). */
+  multipartThreshold?: number;
+  /** Multipart chunk size in bytes (0 = library default). */
+  multipartPartSize?: number;
+}
+
+/**
  * Configuration for opening a TidesDB instance.
  */
 export interface Config {
@@ -194,7 +227,13 @@ export interface Config {
   unifiedMemtableSyncIntervalUs?: number;
   /** Filesystem object store root directory. When set, enables object store mode with the FS connector. */
   objectStoreFsPath?: string;
-  /** Object store behavior configuration (used when objectStoreFsPath is set). */
+  /**
+   * S3-compatible object store connector. When set (and `objectStoreFsPath` is
+   * not), enables object store mode backed by S3. Requires a `libtidesdb` built
+   * with `TIDESDB_WITH_S3`.
+   */
+  objectStoreS3Config?: S3Config;
+  /** Object store behavior configuration (used when an object store connector is set). */
   objectStoreConfig?: ObjectStoreConfig;
 }
 

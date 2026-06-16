@@ -101,6 +101,7 @@ export {
   Config,
   ColumnFamilyConfig,
   ObjectStoreConfig,
+  S3Config,
   Stats,
   DbStats,
   CacheStats,
