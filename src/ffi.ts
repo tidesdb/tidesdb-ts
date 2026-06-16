@@ -54,6 +54,22 @@ export const ObjStoreConfigStruct = koffi.struct("tidesdb_objstore_config_t", {
   replica_replay_wal: "int",
 });
 
+// tidesdb_objstore_s3_config_t structure
+export const S3ConfigStruct = koffi.struct("tidesdb_objstore_s3_config_t", {
+  endpoint: "const char *",
+  bucket: "const char *",
+  prefix: "const char *",
+  access_key: "const char *",
+  secret_key: "const char *",
+  region: "const char *",
+  use_ssl: "int",
+  use_path_style: "int",
+  tls_ca_path: "const char *",
+  tls_insecure_skip_verify: "int",
+  multipart_threshold: "size_t",
+  multipart_part_size: "size_t",
+});
+
 // tidesdb_config_t structure
 export const TidesDBConfigStruct = koffi.struct("tidesdb_config_t", {
   db_path: "char *",
@@ -240,6 +256,18 @@ function getLibraryPath(): string {
 const libPath = getLibraryPath();
 export const lib = koffi.load(libPath);
 
+// Bind a symbol that may be absent depending on build-time options (e.g. S3
+// support requires TIDESDB_WITH_S3). koffi resolves the symbol eagerly, so an
+// unconditional bind would throw at import time on builds that omit it.
+// Returns null when the symbol is not present; callers must check before use.
+function optionalFunc(signature: string): ReturnType<typeof lib.func> | null {
+  try {
+    return lib.func(signature);
+  } catch {
+    return null;
+  }
+}
+
 // Database operations
 export const tidesdb_open = lib.func(
   "int tidesdb_open(tidesdb_config_t *config, _Out_ tidesdb_t **db)",
@@ -390,6 +418,31 @@ export const tidesdb_get_comparator = lib.func(
   "int tidesdb_get_comparator(tidesdb_t *db, const char *name, _Out_ void **fn, _Out_ void **ctx)",
 );
 
+// Built-in comparator functions. These are auto-registered by name on open, so
+// they are usable via ColumnFamilyConfig.comparatorName without binding. The raw
+// symbols are bound here for parity with db.h and to allow aliasing a built-in
+// under a custom name through tidesdb_register_comparator.
+const comparatorSig = (name: string) =>
+  `int ${name}(const uint8_t *key1, size_t key1_size, const uint8_t *key2, size_t key2_size, void *ctx)`;
+export const tidesdb_comparator_memcmp = lib.func(
+  comparatorSig("tidesdb_comparator_memcmp"),
+);
+export const tidesdb_comparator_lexicographic = lib.func(
+  comparatorSig("tidesdb_comparator_lexicographic"),
+);
+export const tidesdb_comparator_uint64 = lib.func(
+  comparatorSig("tidesdb_comparator_uint64"),
+);
+export const tidesdb_comparator_int64 = lib.func(
+  comparatorSig("tidesdb_comparator_int64"),
+);
+export const tidesdb_comparator_reverse_memcmp = lib.func(
+  comparatorSig("tidesdb_comparator_reverse_memcmp"),
+);
+export const tidesdb_comparator_case_insensitive = lib.func(
+  comparatorSig("tidesdb_comparator_case_insensitive"),
+);
+
 // Configuration operations
 export const tidesdb_cf_config_load_from_ini = lib.func(
   "int tidesdb_cf_config_load_from_ini(const char *ini_file, const char *section_name, _Out_ tidesdb_column_family_config_t *config)",
@@ -448,6 +501,16 @@ export const tidesdb_objstore_default_config = lib.func(
 );
 export const tidesdb_objstore_fs_create = lib.func(
   "tidesdb_objstore_t *tidesdb_objstore_fs_create(const char *root_dir)",
+);
+
+// S3 connector factories. Only present when the library was built with
+// TIDESDB_WITH_S3; otherwise these symbols are unresolved and the bindings are
+// null. Check for null before calling and surface a clear error to the caller.
+export const tidesdb_objstore_s3_create = optionalFunc(
+  "tidesdb_objstore_t *tidesdb_objstore_s3_create(const char *endpoint, const char *bucket, const char *prefix, const char *access_key, const char *secret_key, const char *region, int use_ssl, int use_path_style)",
+);
+export const tidesdb_objstore_s3_create_config = optionalFunc(
+  "tidesdb_objstore_t *tidesdb_objstore_s3_create_config(const tidesdb_objstore_s3_config_t *config)",
 );
 
 // Memory management

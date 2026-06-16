@@ -41,6 +41,7 @@ import {
   tidesdb_cancel_background_work,
   tidesdb_objstore_default_config,
   tidesdb_objstore_fs_create,
+  tidesdb_objstore_s3_create_config,
   tidesdb_init,
   tidesdb_finalize,
   tidesdb_raise_open_file_limit,
@@ -227,7 +228,34 @@ export class TidesDB {
       if (!objStorePtr) {
         throw new Error("failed to create filesystem object store connector");
       }
+    } else if (mergedConfig.objectStoreS3Config) {
+      if (!tidesdb_objstore_s3_create_config) {
+        throw new Error(
+          "S3 object store support is not available in this build of libtidesdb (rebuild with TIDESDB_WITH_S3)",
+        );
+      }
+      const s3 = mergedConfig.objectStoreS3Config;
+      objStorePtr = tidesdb_objstore_s3_create_config({
+        endpoint: s3.endpoint,
+        bucket: s3.bucket,
+        prefix: s3.prefix ?? null,
+        access_key: s3.accessKey,
+        secret_key: s3.secretKey,
+        region: s3.region ?? null,
+        use_ssl: s3.useSsl === false ? 0 : 1,
+        use_path_style: s3.usePathStyle ? 1 : 0,
+        tls_ca_path: s3.tlsCaPath ?? null,
+        tls_insecure_skip_verify: s3.tlsInsecureSkipVerify ? 1 : 0,
+        multipart_threshold: s3.multipartThreshold ?? 0,
+        multipart_part_size: s3.multipartPartSize ?? 0,
+      });
+      if (!objStorePtr) {
+        throw new Error("failed to create S3 object store connector");
+      }
+    }
 
+    // An object store connector (FS or S3) was created; build its behavior config.
+    if (objStorePtr) {
       const osDefaults = defaultObjectStoreConfig();
       const osConfig = { ...osDefaults, ...mergedConfig.objectStoreConfig };
 
