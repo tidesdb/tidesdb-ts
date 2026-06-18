@@ -29,6 +29,7 @@ import {
   tidesdb_txn_rollback_to_savepoint,
   tidesdb_txn_release_savepoint,
   tidesdb_iter_new,
+  tidesdb_free,
 } from './ffi';
 import { checkResult } from './error';
 import { ColumnFamily } from './column-family';
@@ -92,11 +93,19 @@ export class Transaction {
     );
     checkResult(result, 'failed to get value');
 
-    const valueSize = valueSizeOut[0];
-    if (valueSize === 0) return Buffer.alloc(0);
-
-    // Decode the pointer to a buffer
-    return Buffer.from(koffi.decode(valuePtrOut[0], 'uint8_t', valueSize) as number[]);
+    // tidesdb_txn_get malloc's *value and transfers ownership to the caller, so
+    // we must free it after copying into a JS Buffer -- otherwise every get()
+    // leaks the value's bytes.
+    const ptr = valuePtrOut[0];
+    if (!ptr) return Buffer.alloc(0);
+    try {
+      const valueSize = valueSizeOut[0];
+      return valueSize > 0
+        ? Buffer.from(koffi.decode(ptr, 'uint8_t', valueSize) as number[])
+        : Buffer.alloc(0);
+    } finally {
+      tidesdb_free(ptr);
+    }
   }
 
   /**
