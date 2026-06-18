@@ -88,7 +88,12 @@ export const TidesDBConfigStruct = koffi.struct("tidesdb_config_t", {
   unified_memtable_sync_mode: "int",
   unified_memtable_sync_interval_us: "uint64_t",
   object_store: "void *",
-  object_store_config: "void *",
+  // Pointer to the registered tidesdb_objstore_config_t struct (not an opaque
+  // void *): tidesdb.ts assigns a JS object here, which koffi can only marshal
+  // into the C struct if the field is typed as that struct pointer. Left as
+  // "void *", every object-store open throws "Unexpected Object value, expected
+  // void *". (object_store above is a genuine opaque connector handle.)
+  object_store_config: "tidesdb_objstore_config_t *",
   max_concurrent_flushes: "int",
   finish_compactions_on_close: "int",
 });
