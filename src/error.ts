@@ -62,6 +62,8 @@ export class TidesDBError extends Error {
         return 'database is read-only';
       case ErrorCode.ErrBusy:
         return 'resource is busy';
+      case ErrorCode.ErrPrecondition:
+        return 'precondition failed';
       default:
         return 'unknown error';
     }

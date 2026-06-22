@@ -77,6 +77,7 @@ export enum ErrorCode {
   ErrLocked = -12,
   ErrReadonly = -13,
   ErrBusy = -14,
+  ErrPrecondition = -15,
 }
 
 /**
@@ -436,6 +437,17 @@ export interface DbStats {
   totalUploadFailures: number;
   /** Whether running in read-only replica mode. */
   replicaMode: boolean;
+  /**
+   * Single-writer fencing (object-store mode): the lease epoch this primary
+   * currently holds (`0` when not a primary / no lease). A promotion that took
+   * bumps this; a fenced primary sees `replicaMode` flip back to `true`.
+   */
+  primaryEpoch: number;
+  /**
+   * Single-writer fencing (object-store mode): the highest lease epoch a
+   * replica has observed.
+   */
+  seenEpoch: number;
   /**
    * Framed bytes appended to the shared unified WAL (lifetime since open).
    * `0` when unified-memtable mode is off.
