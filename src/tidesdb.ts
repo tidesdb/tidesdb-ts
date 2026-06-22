@@ -46,6 +46,8 @@ import {
   tidesdb_finalize,
   tidesdb_raise_open_file_limit,
   tidesdb_compression_available,
+  tidesdb_cf_config_load_from_ini,
+  tidesdb_cf_config_save_to_ini,
 } from "./ffi";
 import { checkResult, TidesDBError } from "./error";
 import { ColumnFamily } from "./column-family";
@@ -147,6 +149,101 @@ export function defaultObjectStoreConfig(): ObjectStoreConfig {
     replicaMode: cConfig.replica_mode !== 0,
     replicaSyncIntervalUs: cConfig.replica_sync_interval_us as number,
     replicaReplayWal: cConfig.replica_replay_wal !== 0,
+  };
+}
+
+/**
+ * Marshal a (defaults-merged) ColumnFamilyConfig into the C
+ * `tidesdb_column_family_config_t` struct shape koffi expects.
+ */
+function buildCfConfigStruct(
+  c: ColumnFamilyConfig,
+  name: string,
+): Record<string, unknown> {
+  const comparatorNameArr = new Array(64).fill(0);
+  if (c.comparatorName) {
+    const nameBytes = Buffer.from(c.comparatorName, "utf8");
+    for (let i = 0; i < Math.min(nameBytes.length, 63); i++) {
+      comparatorNameArr[i] = nameBytes[i];
+    }
+  }
+
+  const comparatorCtxArr = new Array(256).fill(0);
+
+  const nameArr = new Array(128).fill(0);
+  const cfNameBytes = Buffer.from(name, "utf8");
+  for (let i = 0; i < Math.min(cfNameBytes.length, 127); i++) {
+    nameArr[i] = cfNameBytes[i];
+  }
+
+  return {
+    name: nameArr,
+    write_buffer_size: c.writeBufferSize!,
+    level_size_ratio: c.levelSizeRatio!,
+    min_levels: c.minLevels!,
+    dividing_level_offset: c.dividingLevelOffset!,
+    klog_value_threshold: c.klogValueThreshold!,
+    compression_algorithm: c.compressionAlgorithm!,
+    enable_bloom_filter: c.enableBloomFilter ? 1 : 0,
+    bloom_fpr: c.bloomFpr!,
+    enable_block_indexes: c.enableBlockIndexes ? 1 : 0,
+    index_sample_ratio: c.indexSampleRatio!,
+    block_index_prefix_len: c.blockIndexPrefixLen!,
+    sync_mode: c.syncMode!,
+    sync_interval_us: c.syncIntervalUs!,
+    comparator_name: comparatorNameArr,
+    comparator_ctx_str: comparatorCtxArr,
+    comparator_fn_cached: null,
+    comparator_ctx_cached: null,
+    skip_list_max_level: c.skipListMaxLevel!,
+    skip_list_probability: c.skipListProbability!,
+    default_isolation_level: c.defaultIsolationLevel!,
+    min_disk_space: c.minDiskSpace!,
+    l1_file_count_trigger: c.l1FileCountTrigger!,
+    l0_queue_stall_threshold: c.l0QueueStallThreshold!,
+    tombstone_density_trigger: c.tombstoneDensityTrigger ?? 0,
+    tombstone_density_min_entries: c.tombstoneDensityMinEntries ?? 0,
+    use_btree: c.useBtree ? 1 : 0,
+    commit_hook_fn: null,
+    commit_hook_ctx: null,
+    object_target_file_size: 0,
+    object_lazy_compaction: c.objectLazyCompaction ? 1 : 0,
+    object_prefetch_compaction: c.objectPrefetchCompaction === false ? 0 : 1,
+  };
+}
+
+/**
+ * Decode a C `tidesdb_column_family_config_t` struct (as returned by koffi)
+ * into a ColumnFamilyConfig.
+ */
+function decodeCfConfigStruct(
+  d: Record<string, unknown>,
+): ColumnFamilyConfig {
+  return {
+    writeBufferSize: d.write_buffer_size as number,
+    levelSizeRatio: d.level_size_ratio as number,
+    minLevels: d.min_levels as number,
+    dividingLevelOffset: d.dividing_level_offset as number,
+    klogValueThreshold: d.klog_value_threshold as number,
+    compressionAlgorithm: d.compression_algorithm as CompressionAlgorithm,
+    enableBloomFilter: (d.enable_bloom_filter as number) !== 0,
+    bloomFpr: d.bloom_fpr as number,
+    enableBlockIndexes: (d.enable_block_indexes as number) !== 0,
+    indexSampleRatio: d.index_sample_ratio as number,
+    blockIndexPrefixLen: d.block_index_prefix_len as number,
+    syncMode: d.sync_mode as SyncMode,
+    syncIntervalUs: d.sync_interval_us as number,
+    skipListMaxLevel: d.skip_list_max_level as number,
+    skipListProbability: d.skip_list_probability as number,
+    defaultIsolationLevel: d.default_isolation_level as IsolationLevel,
+    minDiskSpace: d.min_disk_space as number,
+    l1FileCountTrigger: d.l1_file_count_trigger as number,
+    l0QueueStallThreshold: d.l0_queue_stall_threshold as number,
+    tombstoneDensityTrigger: d.tombstone_density_trigger as number,
+    tombstoneDensityMinEntries: d.tombstone_density_min_entries as number,
+    useBtree: (d.use_btree as number) !== 0,
+    objectLazyCompaction: (d.object_lazy_compaction as number) !== 0,
+    objectPrefetchCompaction: (d.object_prefetch_compaction as number) !== 0,
   };
 }
 
@@ -328,58 +425,7 @@ export class TidesDB {
     const defaults = defaultColumnFamilyConfig();
     const mergedConfig = { ...defaults, ...config };
 
-    // Build the comparator_name as an array of char codes
-    const comparatorNameArr = new Array(64).fill(0);
-    if (mergedConfig.comparatorName) {
-      const nameBytes = Buffer.from(mergedConfig.comparatorName, "utf8");
-      for (let i = 0; i < Math.min(nameBytes.length, 63); i++) {
-        comparatorNameArr[i] = nameBytes[i];
-      }
-    }
-
-    const comparatorCtxArr = new Array(256).fill(0);
-
-    // Build the name as an array of char codes (128 bytes)
-    const nameArr = new Array(128).fill(0);
-    const cfNameBytes = Buffer.from(name, "utf8");
-    for (let i = 0; i < Math.min(cfNameBytes.length, 127); i++) {
-      nameArr[i] = cfNameBytes[i];
-    }
-
-    const cConfig = {
-      name: nameArr,
-      write_buffer_size: mergedConfig.writeBufferSize!,
-      level_size_ratio: mergedConfig.levelSizeRatio!,
-      min_levels: mergedConfig.minLevels!,
-      dividing_level_offset: mergedConfig.dividingLevelOffset!,
-      klog_value_threshold: mergedConfig.klogValueThreshold!,
-      compression_algorithm: mergedConfig.compressionAlgorithm!,
-      enable_bloom_filter: mergedConfig.enableBloomFilter ? 1 : 0,
-      bloom_fpr: mergedConfig.bloomFpr!,
-      enable_block_indexes: mergedConfig.enableBlockIndexes ? 1 : 0,
-      index_sample_ratio: mergedConfig.indexSampleRatio!,
-      block_index_prefix_len: mergedConfig.blockIndexPrefixLen!,
-      sync_mode: mergedConfig.syncMode!,
-      sync_interval_us: mergedConfig.syncIntervalUs!,
-      comparator_name: comparatorNameArr,
-      comparator_ctx_str: comparatorCtxArr,
-      comparator_fn_cached: null,
-      comparator_ctx_cached: null,
-      skip_list_max_level: mergedConfig.skipListMaxLevel!,
-      skip_list_probability: mergedConfig.skipListProbability!,
-      default_isolation_level: mergedConfig.defaultIsolationLevel!,
-      min_disk_space: mergedConfig.minDiskSpace!,
-      l1_file_count_trigger: mergedConfig.l1FileCountTrigger!,
-      l0_queue_stall_threshold: mergedConfig.l0QueueStallThreshold!,
-      tombstone_density_trigger: mergedConfig.tombstoneDensityTrigger ?? 0,
-      tombstone_density_min_entries: mergedConfig.tombstoneDensityMinEntries ?? 0,
-      use_btree: mergedConfig.useBtree ? 1 : 0,
-      commit_hook_fn: null,
-      commit_hook_ctx: null,
-      object_target_file_size: 0,
-      object_lazy_compaction: mergedConfig.objectLazyCompaction ? 1 : 0,
-      object_prefetch_compaction: mergedConfig.objectPrefetchCompaction === false ? 0 : 1,
-    };
+    const cConfig = buildCfConfigStruct(mergedConfig, name);
 
     const result = tidesdb_create_column_family(this._db, name, cConfig);
     checkResult(result, "failed to create column family");
@@ -654,6 +700,8 @@ export class TidesDB {
       total_uploads: 0,
       total_upload_failures: 0,
       replica_mode: 0,
+      primary_epoch: 0,
+      seen_epoch: 0,
       uwal_bytes_written: 0,
       wal_bytes_written: 0,
       flush_bytes_written: 0,
@@ -709,6 +757,8 @@ export class TidesDB {
       totalUploads: cStats.total_uploads as number,
       totalUploadFailures: cStats.total_upload_failures as number,
       replicaMode: cStats.replica_mode !== 0,
+      primaryEpoch: cStats.primary_epoch as number,
+      seenEpoch: cStats.seen_epoch as number,
       uwalBytesWritten: cStats.uwal_bytes_written as number,
       walBytesWritten: cStats.wal_bytes_written as number,
       flushBytesWritten: cStats.flush_bytes_written as number,
@@ -748,5 +798,52 @@ export class TidesDB {
       hitRate: cStats.hit_rate as number,
       numPartitions: cStats.num_partitions as number,
     };
+  }
+
+  /**
+   * Load a column family configuration from an INI file section.
+   *
+   * Fields absent from the section keep their library defaults, so the result
+   * is a complete config suitable for `createColumnFamily()`. This is a
+   * standalone helper -- it does not require an open database.
+   *
+   * @param iniFile Path to the INI file to read.
+   * @param sectionName Section name within the INI file (e.g. the CF name).
+   * @returns The parsed column family configuration.
+   */
+  static loadColumnFamilyConfigFromIni(
+    iniFile: string,
+    sectionName: string,
+  ): ColumnFamilyConfig {
+    // Start from defaults so any keys missing from the INI section are
+    // well-defined; the C call overwrites the struct in place with parsed values.
+    const cConfig = buildCfConfigStruct(defaultColumnFamilyConfig(), sectionName);
+
+    const result = tidesdb_cf_config_load_from_ini(iniFile, sectionName, cConfig);
+    checkResult(result, "failed to load column family config from INI");
+
+    return decodeCfConfigStruct(cConfig as Record<string, unknown>);
+  }
+
+  /**
+   * Save a column family configuration to an INI file section.
+   *
+   * The configuration is merged over the library defaults before writing, so a
+   * partial `config` produces a complete, round-trippable section.
+   *
+   * @param iniFile Path to the INI file to write (created if absent).
+   * @param sectionName Section name within the INI file (e.g. the CF name).
+   * @param config Column family configuration to persist.
+   */
+  static saveColumnFamilyConfigToIni(
+    iniFile: string,
+    sectionName: string,
+    config: ColumnFamilyConfig = {},
+  ): void {
+    const merged = { ...defaultColumnFamilyConfig(), ...config };
+    const cConfig = buildCfConfigStruct(merged, sectionName);
+
+    const result = tidesdb_cf_config_save_to_ini(iniFile, sectionName, cConfig);
+    checkResult(result, "failed to save column family config to INI");
   }
 }

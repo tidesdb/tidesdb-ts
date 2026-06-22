@@ -27,6 +27,7 @@ import {
   ErrorCode,
   CommitOp,
   defaultConfig,
+  defaultColumnFamilyConfig,
   BuiltinComparator,
 } from "./index";
 
@@ -1327,6 +1328,19 @@ describe("TidesDB", () => {
         removeTempDir(unifiedDir);
       }
     });
+
+    test("getDbStats exposes single-writer fencing epochs", () => {
+      const stats = db.getDbStats();
+      // Single-writer fencing fields sit between replica_mode and the
+      // write-amplification counters in the C struct; their presence (and the
+      // sane values of the WA counters that follow) confirm struct alignment.
+      expect(typeof stats.primaryEpoch).toBe("number");
+      expect(typeof stats.seenEpoch).toBe("number");
+      expect(stats.primaryEpoch).toBeGreaterThanOrEqual(0);
+      expect(stats.seenEpoch).toBeGreaterThanOrEqual(0);
+      // A plain local (non-replica) database is not fenced.
+      expect(stats.replicaMode).toBe(false);
+    });
   });
 
   describe("ErrReadonly Error Code", () => {
@@ -1730,6 +1744,18 @@ describe("TidesDB", () => {
     });
   });
 
+  describe("ErrPrecondition Error Code", () => {
+    test("ErrPrecondition is defined with the correct numeric value", () => {
+      expect(ErrorCode.ErrPrecondition).toBe(-15);
+    });
+
+    test("ErrPrecondition maps to a human-readable message", () => {
+      const err = new TidesDBError(ErrorCode.ErrPrecondition, "op");
+      expect(err.message).toContain("precondition");
+      expect(err.code).toBe(ErrorCode.ErrPrecondition);
+    });
+  });
+
   describe("Built-in Comparators", () => {
     test("built-in comparator names are usable without manual registration", () => {
       // These are auto-registered by the engine on open.
@@ -1783,6 +1809,83 @@ describe("TidesDB", () => {
       readTxn.free();
 
       expect(order).toEqual([2n, 10n, 256n]);
+    });
+  });
+
+  describe("Column Family INI Config", () => {
+    test("save then load round-trips a column family config", () => {
+      const iniDir = createTempDir();
+      try {
+        const iniFile = path.join(iniDir, "cf.ini");
+        const section = "my_cf";
+
+        TidesDB.saveColumnFamilyConfigToIni(iniFile, section, {
+          writeBufferSize: 32 * 1024 * 1024,
+          compressionAlgorithm: CompressionAlgorithm.ZstdCompression,
+          enableBloomFilter: true,
+          bloomFpr: 0.02,
+          syncMode: SyncMode.Interval,
+          syncIntervalUs: 64000,
+          useBtree: true,
+        });
+
+        expect(fs.existsSync(iniFile)).toBe(true);
+
+        const loaded = TidesDB.loadColumnFamilyConfigFromIni(iniFile, section);
+        expect(loaded.writeBufferSize).toBe(32 * 1024 * 1024);
+        expect(loaded.compressionAlgorithm).toBe(
+          CompressionAlgorithm.ZstdCompression,
+        );
+        expect(loaded.enableBloomFilter).toBe(true);
+        expect(loaded.bloomFpr).toBeCloseTo(0.02, 6);
+        expect(loaded.syncMode).toBe(SyncMode.Interval);
+        expect(loaded.syncIntervalUs).toBe(64000);
+        expect(loaded.useBtree).toBe(true);
+      } finally {
+        removeTempDir(iniDir);
+      }
+    });
+
+    test("loaded INI config is usable to create a column family", () => {
+      const iniDir = createTempDir();
+      try {
+        const iniFile = path.join(iniDir, "cf.ini");
+        const section = "ini_created_cf";
+
+        const defaults = defaultColumnFamilyConfig();
+        TidesDB.saveColumnFamilyConfigToIni(iniFile, section, {
+          ...defaults,
+          enableBloomFilter: true,
+          compressionAlgorithm: CompressionAlgorithm.Lz4Compression,
+        });
+
+        const loaded = TidesDB.loadColumnFamilyConfigFromIni(iniFile, section);
+
+        expect(() =>
+          db.createColumnFamily("ini_created_cf", loaded),
+        ).not.toThrow();
+
+        const cf = db.getColumnFamily("ini_created_cf");
+        const stats = cf.getStats();
+        expect(stats.config).toBeDefined();
+        expect(stats.config!.compressionAlgorithm).toBe(
+          CompressionAlgorithm.Lz4Compression,
+        );
+      } finally {
+        removeTempDir(iniDir);
+      }
+    });
+
+    test("loading a missing INI file throws", () => {
+      const iniDir = createTempDir();
+      try {
+        const missing = path.join(iniDir, "does_not_exist.ini");
+        expect(() =>
+          TidesDB.loadColumnFamilyConfigFromIni(missing, "nope"),
+        ).toThrow(TidesDBError);
+      } finally {
+        removeTempDir(iniDir);
+      }
     });
   });
 });

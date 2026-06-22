@@ -189,6 +189,10 @@ export const DbStatsStruct = koffi.struct("tidesdb_db_stats_t", {
   total_uploads: "uint64_t",
   total_upload_failures: "uint64_t",
   replica_mode: "int",
+  // single-writer fencing (object-store mode): the lease epoch this primary
+  // holds (0 when not primary) and the highest epoch a replica has observed.
+  primary_epoch: "uint64_t",
+  seen_epoch: "uint64_t",
   // write-amplification counters (lifetime since open, on-disk framed bytes)
   uwal_bytes_written: "uint64_t",
   wal_bytes_written: "uint64_t",
